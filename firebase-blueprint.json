@@ -1,0 +1,105 @@
+{
+  "entities": {
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "A public chat room message.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The message content"
+        },
+        "senderName": {
+          "type": "string",
+          "description": "The display name chosen by the user"
+        },
+        "avatarSeed": {
+          "type": "string",
+          "description": "Seed for avatar generation"
+        },
+        "uid": {
+          "type": "string",
+          "description": "The ID of the sender"
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Visibility flag",
+          "enum": ["public"]
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Server timestamp"
+        }
+      },
+      "required": [
+        "text",
+        "senderName",
+        "uid",
+        "timestamp"
+      ]
+    },
+    "VipToolUsage": {
+      "title": "VIP Tool Usage",
+      "description": "Tracking analytics for VIP tools.",
+      "type": "object",
+      "properties": {
+        "toolName": { "type": "string" },
+        "targetPhone": { "type": "string" },
+        "uid": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["toolName", "uid", "timestamp"]
+    },
+    "AppUser": {
+      "title": "App User",
+      "description": "Status tracking for app users (banning).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "userName": { "type": "string" },
+        "lastSeen": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "banned"] },
+        "isBlocked": { "type": "boolean" }
+      },
+      "required": ["uid", "status"]
+    },
+    "AppNotification": {
+      "title": "Notification",
+      "description": "Global announcements from admin.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "type": { "type": "string" }
+      },
+      "required": ["title", "message", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/chat_messages/{messageId}": {
+      "schema": {
+        "$ref": "#/entities/ChatMessage"
+      },
+      "description": "Public chat messages."
+    },
+    "/vip_tool_usage/{usageId}": {
+      "schema": {
+        "$ref": "#/entities/VipToolUsage"
+      },
+      "description": "VIP feature usage tracking."
+    },
+    "/app_users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/AppUser"
+      },
+      "description": "All users of the application."
+    },
+    "/notifications/{notifId}": {
+      "schema": {
+        "$ref": "#/entities/AppNotification"
+      },
+      "description": "Global system notifications."
+    }
+  }
+}
