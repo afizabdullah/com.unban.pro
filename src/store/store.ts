@@ -5,6 +5,13 @@ export interface AppSettings {
   webhookUrl?: string;
 }
 
+export interface ProxySettings {
+  host: string;
+  port: string;
+  protocol: 'HTTP' | 'SOCKS5';
+  isEnabled: boolean;
+}
+
 export interface BanReason {
   id: string;
   name: string;
@@ -186,5 +193,15 @@ export const store = {
   },
   clearStats: () => {
     localStorage.setItem('stats', JSON.stringify([]));
+  },
+  
+  getProxySettings: (): ProxySettings => {
+    const data = localStorage.getItem('proxySettings');
+    return data ? JSON.parse(data) : { host: '', port: '', protocol: 'HTTP', isEnabled: false };
+  },
+  saveProxySettings: (settings: ProxySettings) => {
+    localStorage.setItem('proxySettings', JSON.stringify(settings));
+    // Dispatch event to notify services of change
+    window.dispatchEvent(new CustomEvent('proxyChanged', { detail: settings }));
   }
 };

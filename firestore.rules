@@ -1,72 +1,138 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+    
     // 0. Global Safety Net
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Phase 3: Primitives
-    function isValidId(id) { 
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    // --- Global Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
     }
-    function incoming() { return request.resource.data; }
-    function existing() { return resource.data; }
-    function isSignedIn() { return request.auth != null; }
 
-    // Phase 4: Validation Blueprints
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.get('email', '') == 'a716023560@gmail.com' && request.auth.token.email_verified == true) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isInternalAdmin() {
+      return isSignedIn() && (request.auth.token.get('email', '') == 'a716023560@gmail.com' && request.auth.token.email_verified == true);
+    }
+
+    function isValidId(id) {
+       return id is string && id.size() >= 10 && id.size() <= 128;
+    }
+
+    // --- Entity Validations ---
+
     function isValidChatMessage(data) {
-      return data.keys().hasAll(['text', 'senderName', 'uid', 'visibility', 'timestamp']) &&
-             data.keys().size() >= 5 && // allow optional avatarSeed
-             data.text is string && data.text.size() > 0 && data.text.size() <= 500 &&
-             data.senderName is string && data.senderName.size() > 0 && data.senderName.size() <= 50 &&
-             data.uid is string && data.uid.size() > 0 && data.uid.size() <= 100 &&
-             data.visibility == 'public' &&
-             data.timestamp == request.time;
+      return data.size() == 6
+        && data.text is string && data.text.size() <= 1000
+        && data.senderName is string && data.senderName.size() <= 100
+        && data.avatarSeed is string && data.avatarSeed.size() <= 100
+        && data.uid == request.auth.uid
+        && data.visibility == 'public'
+        && data.timestamp == request.time;
+    }
+
+    function isValidUnbanRequest(data) {
+      return data.size() == 7
+        && data.userId == request.auth.uid
+        && data.phone is string && data.phone.size() <= 32
+        && data.reasonId is string && data.reasonId.size() <= 64
+        && data.deviceId is string && data.deviceId.size() <= 128
+        && data.languageId is string && data.languageId.size() <= 16
+        && data.status == 'pending'
+        && data.timestamp == request.time;
     }
 
     function isValidVipUsage(data) {
-      return data.keys().hasAll(['toolName', 'uid', 'timestamp']) &&
-             data.toolName is string && data.toolName.size() <= 100 &&
-             data.uid is string && data.uid.size() <= 100 &&
-             data.timestamp == request.time;
+      return data.size() == 5
+        && data.toolName is string && data.toolName.size() <= 128
+        && data.targetPhone is string && data.targetPhone.size() <= 64
+        && data.action is string && data.action.size() <= 64
+        && data.uid == request.auth.uid
+        && data.timestamp == request.time;
     }
 
-    function isValidAppUser(data) {
-      return data.keys().hasAll(['uid', 'status']) &&
-             data.uid is string && data.uid.size() <= 100 &&
-             data.status in ['active', 'banned'];
+    // --- Collection Rules ---
+
+    match /admins/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isInternalAdmin() || isAdmin();
     }
 
-    function isValidNotification(data) {
-      return data.keys().hasAll(['title', 'message', 'timestamp']) &&
-             data.title is string && data.message is string &&
-             data.timestamp == request.time;
-    }
-
-    // Chat Messages Rules
     match /chat_messages/{messageId} {
-      allow get, list: if existing().visibility == 'public';
-      allow create: if isValidId(messageId) && isValidChatMessage(incoming());
+      allow list: if isSignedIn() && resource.data.visibility == 'public';
+      allow get: if isSignedIn() && isValidId(messageId) && resource.data.visibility == 'public';
+      allow create: if isSignedIn() 
+        && isValidId(messageId) 
+        && isValidChatMessage(request.resource.data);
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
     }
 
-    // VIP Usage
-    match /vip_tool_usage/{usageId} {
-      allow create: if isValidId(usageId) && isValidVipUsage(incoming());
-      allow read, list: if false; // Only admin via service account/console for now
-    }
-
-    // App Users
     match /app_users/{userId} {
-      allow get: if true; // anyone can check if they are banned
-      allow list: if true; 
-      allow create, update: if isValidId(userId) && isValidAppUser(incoming());
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) 
+        && request.resource.data.status == 'active'
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if isOwner(userId) 
+        && request.resource.data.status == 'active'
+        && request.resource.data.uid == request.auth.uid
+        || isAdmin();
     }
 
-    // Notifications
+    match /unban_requests/{requestId} {
+      allow list: if isSignedIn() && (isAdmin() || (resource.data.userId == request.auth.uid));
+      allow get: if isSignedIn() && (isAdmin() || (resource.data.userId == request.auth.uid));
+      allow create: if isSignedIn() 
+        && isValidId(requestId)
+        && isValidUnbanRequest(request.resource.data);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /vip_tool_usage/{usageId} {
+      allow create: if isSignedIn() 
+        && isValidId(usageId)
+        && isValidVipUsage(request.resource.data);
+      allow read: if isAdmin();
+      allow list: if isAdmin();
+    }
+
     match /notifications/{notifId} {
-      allow get, list: if true;
-      allow create, update: if true; // simplified for this demo, allow admin to write
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /app_accounts/{accountId} {
+      // Allow list for the login query (username/password match)
+      allow list: if isSignedIn(); 
+      // Allow get if the user knows the ID (randomly generated)
+      allow get: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /global_stats/counters {
+      allow read: if true;
+      allow create: if (isSignedIn() || true)
+        && request.resource.data.size() == 2
+        && request.resource.data.totalRequests == 1
+        && request.resource.data.lastUpdate == request.time;
+      allow update: if (isSignedIn() || true) 
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalRequests', 'lastUpdate'])
+        && request.resource.data.totalRequests == resource.data.totalRequests + 1
+        && request.resource.data.lastUpdate == request.time;
     }
   }
 }

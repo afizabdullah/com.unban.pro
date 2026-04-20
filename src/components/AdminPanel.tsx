@@ -1,19 +1,52 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, LayoutDashboard, Database, Activity, Smartphone, LogOut, Plus, Trash2, Save, AlertTriangle, Globe, Settings, Download, Eraser, FileText, Users, Bell, Ban, Sparkles, Loader2, ShieldCheck } from 'lucide-react';
+import { Lock, LayoutDashboard, Database, Activity, Smartphone, LogOut, Plus, Trash2, Save, AlertTriangle, Globe, Settings, Download, Eraser, FileText, Users, Bell, Ban, Sparkles, Loader2, ShieldCheck, User, Crown, RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { store, Device, RequestStat, MessageTemplate, BanReason, Language, AppSettings } from '../store/store';
 import { useNotification } from '../contexts/NotificationContext';
-import { collection, query, onSnapshot, updateDoc, doc, addDoc, serverTimestamp, getDocs, setDoc } from 'firebase/firestore';
-import { db } from '../firebase-setup';
+import { collection, query, onSnapshot, updateDoc, doc, addDoc, serverTimestamp, getDocs, setDoc, orderBy, limit } from 'firebase/firestore';
+import { db, auth, signInWithGoogle } from '../firebase-setup';
 import { GoogleGenAI } from "@google/genai";
+
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 
 export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const { notify } = useNotification();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  
+  const [isAdminAuthReady, setIsAdminAuthReady] = useState(false);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user && user.email === 'a716023560@gmail.com' && user.emailVerified) {
+        setIsAuthenticated(true);
+      }
+      setIsAdminAuthReady(true);
+    });
+    return () => unsub();
+  }, []);
+
   const [activeTab, setActiveTab] = useState<'stats' | 'messages' | 'users' | 'devices' | 'reasons' | 'languages' | 'settings'>('stats');
+
+  const handleGoogleLogin = async () => {
+    try {
+      const user = await signInWithGoogle();
+      if (user && user.email === 'a716023560@gmail.com') {
+        await setDoc(doc(db, 'admins', user.uid), {
+          role: 'admin',
+          email: user.email,
+          timestamp: serverTimestamp()
+        });
+        setIsAuthenticated(true);
+        notify('تم تسجيلك كمسؤول وتفعيل الصلاحيات.', 'success');
+      } else {
+        notify('تم تسجيل الدخول، ولكن هذا الحساب ليس له صلاحيات إدارية.', 'info');
+      }
+    } catch (err) {
+      console.error("Google Auth failed:", err);
+      notify('فشل تسجيل الدخول بواسطة Google.', 'error');
+    }
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,42 +64,82 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
     notify('تم إعادة ضبط بيانات الاعتماد لـ الإدارة و الـ VIP.', 'info');
   };
 
+  if (!isAdminAuthReady) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 h-full">
+        <Loader2 className="w-10 h-10 text-red-500 animate-spin mb-4" />
+        <p className="text-[10px] text-neutral-500 uppercase tracking-widest font-mono">Authenticating root access...</p>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
-      <div className="tool-pane max-w-md mx-auto w-full mt-20">
-        <div className="text-center mb-8">
-          <Lock className="w-12 h-12 mx-auto mb-4 text-[var(--neon)] opacity-80" />
-          <h2 className="text-2xl font-bold font-mono">ADMIN_ACCESS_REQUIRED</h2>
-        </div>
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div className="input-group">
-            <input 
-              type="password" 
-              placeholder="Enter Password..."
-              className="input-styled text-center"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+      <div className="flex flex-col items-center justify-center flex-1 h-full pt-10 px-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="card max-w-sm w-full p-8 text-center border-b-4 border-b-red-500"
+        >
+          <div className="w-20 h-20 rounded-2xl border-2 border-red-500/50 flex items-center justify-center mx-auto mb-6 bg-red-950/20 shadow-[0_0_30px_rgba(239,68,68,0.2)]">
+            <Lock className="w-10 h-10 text-red-500" />
           </div>
-          {error && <p className="text-red-500 text-sm font-mono text-center">{error}</p>}
-          <button 
-            type="submit"
-            className="btn-styled w-full"
-          >
-            AUTHORIZE
-          </button>
-        </form>
-        
-        <div className="mt-6 text-center border-t border-[var(--neon)]/20 pt-4">
-          <p className="text-xs text-gray-500 mb-2">نسيت كلمة المرور؟ اضغط هنا لإعادة ضبط كلمات المرور الخاصة بك إلى القيَم الافتراضية:</p>
-          <button 
-            type="button" 
-            onClick={handleResetPassword}
-            className="text-[var(--neon)] opacity-80 hover:opacity-100 underline text-sm transition-opacity"
-          >
-            إعادة ضبط النظام
-          </button>
-        </div>
+          
+          <h2 className="text-xl font-display font-bold text-white mb-2 uppercase tracking-[0.2em]">Root Authority</h2>
+          <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-8">Access restricted to core system admins</p>
+          
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div className="space-y-2">
+              <input 
+                type="password" 
+                placeholder="ACCESS_TOKEN"
+                className="input-styled text-center tracking-[0.5em] border-red-500/30 focus:border-red-500 focus:ring-red-500/30 font-mono"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            {error && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="p-2 border border-red-500/20 bg-red-950/40 rounded text-[10px] text-red-400 font-bold uppercase"
+              >
+                {error}
+              </motion.div>
+            )}
+            <button 
+              type="submit"
+              className="btn-styled bg-red-600 border-red-400 text-white w-full hover:bg-red-500 hover:shadow-[0_0_20px_rgba(239,68,68,0.3)] transition-all"
+            >
+              AUTHORIZE_SESSION
+            </button>
+
+            <div className="flex items-center gap-4 py-2">
+              <div className="flex-1 h-[1px] bg-red-500/10"></div>
+              <span className="text-[10px] text-neutral-600 uppercase font-mono">OR</span>
+              <div className="flex-1 h-[1px] bg-red-500/10"></div>
+            </div>
+
+            <button 
+              type="button"
+              onClick={handleGoogleLogin}
+              className="btn-styled bg-white/5 border-white/10 text-white w-full hover:bg-white/10 transition-all flex items-center justify-center gap-3"
+            >
+              <Globe className="w-4 h-4 text-blue-400" />
+              SIGN_IN_WITH_GOOGLE
+            </button>
+          </form>
+          
+          <div className="mt-8 pt-6 border-t border-red-500/10 text-center">
+            <button 
+              type="button" 
+              onClick={handleResetPassword}
+              className="text-[10px] text-neutral-600 uppercase font-bold tracking-widest hover:text-red-400 transition-colors"
+            >
+              Emergency Wipe & Reset
+            </button>
+          </div>
+        </motion.div>
       </div>
     );
   }
@@ -75,33 +148,40 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="tool-pane max-w-5xl mx-auto w-full h-[80vh] flex flex-col p-0 overflow-hidden"
+      className="flex flex-col flex-1 max-w-6xl mx-auto w-full h-[calc(100vh-120px)] card p-0 overflow-hidden relative"
     >
+      <div className="matrix-overlay opacity-20"></div>
+      
       {/* Admin Header */}
-      <div className="border-b border-[var(--neon)] p-4 flex justify-between items-center bg-[var(--dim-green)]/30">
-        <div className="flex items-center gap-2">
-          <LayoutDashboard className="w-6 h-6 text-[var(--neon)]" />
-          <h2 className="text-xl font-bold">SYSTEM_ROOT</h2>
+      <header className="header-glass relative z-10 px-6 py-4 flex justify-between items-center bg-neutral-900/60 border-b border-red-500/20">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-red-500/10 rounded-lg">
+            <ShieldCheck className="w-5 h-5 text-red-500" />
+          </div>
+          <div>
+            <h2 className="text-xs font-bold text-white uppercase tracking-widest">مـركـز الـتـحـكـم : ROOT</h2>
+            <p className="text-[9px] text-red-500 font-mono uppercase tracking-[0.2em]">Administrative Override Active</p>
+          </div>
         </div>
         <button 
           onClick={onLogout}
-          className="flex items-center text-sm border border-[var(--neon)] text-[var(--neon)] px-3 py-1 hover:bg-[var(--neon)] hover:text-black transition-colors"
+          className="btn-styled py-1.5 px-4 text-[10px] border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white"
         >
-          <LogOut className="w-4 h-4 ml-1" /> EXIT
+          <LogOut className="w-4 h-4" /> TERMINATE
         </button>
-      </div>
+      </header>
 
-      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 overflow-hidden relative z-10">
         {/* Sidebar */}
-        <div className="w-full md:w-64 border-b md:border-b-0 md:border-l border-[var(--neon)] p-3 flex md:flex-col gap-2 bg-[var(--dark-bg)]/80 overflow-x-auto md:overflow-y-auto shrink-0 hide-scrollbar shadow-[inset_0_0_20px_rgba(0,255,0,0.05)]">
+        <nav className="w-full md:w-56 border-b md:border-b-0 md:border-l border-[var(--glass-border)] p-3 flex md:flex-col gap-2 bg-black/20 overflow-x-auto md:overflow-y-auto shrink-0 styled-scrollbar">
           {[
-            { id: 'stats', label: 'الإحصائيات', icon: Activity },
-            { id: 'users', label: 'إدارة المستخدمين', icon: Users },
-            { id: 'messages', label: 'الرسائل والأكواد', icon: Database },
-            { id: 'devices', label: 'خيارات الأجهزة', icon: Smartphone },
-            { id: 'reasons', label: 'أسباب الحظر', icon: AlertTriangle },
-            { id: 'languages', label: 'اللغات المتوفرة', icon: Globe },
-            { id: 'settings', label: 'إعدادات النظام', icon: Settings },
+            { id: 'stats', label: 'الشبكة والعمليات', icon: Activity },
+            { id: 'users', label: 'إدارة الرواد', icon: Users },
+            { id: 'messages', label: 'كودات الوصول', icon: Database },
+            { id: 'devices', label: 'قاعدة الأجهزة', icon: Smartphone },
+            { id: 'reasons', label: 'مستودع الأسباب', icon: AlertTriangle },
+            { id: 'languages', label: 'معدل اللغات', icon: Globe },
+            { id: 'settings', label: 'ثوابت النظام', icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -109,26 +189,21 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
               <button 
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`group relative w-full flex items-center gap-3 p-3 text-sm md:text-base rounded-lg transition-all duration-300 outline-none overflow-hidden shrink-0 whitespace-nowrap
+                className={`group flex items-center gap-3 p-3 rounded-xl transition-all duration-300 outline-none whitespace-nowrap
                   ${isActive 
-                    ? 'bg-[var(--dim-green)] text-[var(--neon)] shadow-[inset_-4px_0_0_var(--neon),0_0_10px_rgba(0,255,0,0.1)]' 
-                    : 'text-gray-400 hover:bg-green-900/20 hover:text-gray-200 hover:shadow-[inset_-2px_0_0_rgba(0,255,0,0.5)]'
+                    ? 'bg-red-500/10 border border-red-500/30 text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.1)]' 
+                    : 'text-neutral-500 hover:bg-white/5 hover:text-neutral-300'
                   }`}
               >
-                <div className={`p-1.5 rounded-md transition-colors ${isActive ? 'bg-[var(--neon)]/10' : 'bg-gray-800/50 group-hover:bg-gray-800'}`}>
-                  <Icon className={`w-5 h-5 ${isActive ? 'text-[var(--neon)] drop-shadow-[0_0_5px_var(--neon)]' : 'text-gray-500 group-hover:text-[var(--neon)]/70'}`} />
-                </div>
-                <span className="font-bold tracking-wide">{tab.label}</span>
-                {isActive && (
-                  <div className="absolute left-2 w-1.5 h-1.5 rounded-full bg-[var(--neon)] animate-pulse"></div>
-                )}
+                <Icon className={`w-4 h-4 ${isActive ? 'text-red-500' : 'text-neutral-600 group-hover:text-neutral-400'}`} />
+                <span className={`text-[11px] font-bold tracking-wide ${isActive ? 'text-white' : ''}`}>{tab.label}</span>
               </button>
             );
           })}
-        </div>
+        </nav>
 
         {/* Content Area */}
-        <div className="flex-1 p-4 md:p-6 overflow-y-auto">
+        <main className="flex-1 p-6 md:p-8 overflow-y-auto styled-scrollbar bg-black/10">
           {activeTab === 'stats' && <StatsView />}
           {activeTab === 'users' && <UsersAdmin />}
           {activeTab === 'messages' && <MessagesAdmin />}
@@ -136,116 +211,133 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
           {activeTab === 'reasons' && <ReasonsAdmin />}
           {activeTab === 'languages' && <LanguagesAdmin />}
           {activeTab === 'settings' && <SettingsAdmin />}
-        </div>
+        </main>
       </div>
     </motion.div>
   );
 }
 
-// ...StatsView, DevicesAdmin, MessagesAdmin will be below
-
 function StatsView() {
   const { notify } = useNotification();
-  const [stats, setStats] = useState<RequestStat[]>([]);
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [stats, setStats] = useState<any[]>([]);
+  const [globalCounters, setGlobalCounters] = useState<any>(null);
+
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    setStats(store.getStats());
-    setDevices(store.getDevices());
+    const unsubCounters = onSnapshot(doc(db, 'global_stats', 'counters'), (snap) => {
+      if (snap.exists()) setGlobalCounters(snap.data());
+    }, (err) => console.error("AdminPanel stats listener error:", err));
+
+    const q = query(collection(db, 'unban_requests'), orderBy('timestamp', 'desc'), limit(50));
+    const unsubRequests = onSnapshot(q, (snapshot) => {
+      setStats(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => console.error("AdminPanel unban_requests listener error:", err));
+
+    return () => {
+      unsubCounters();
+      unsubRequests();
+    };
   }, []);
 
-  const handleExportCSV = () => {
-    if (stats.length === 0) {
-      notify('لا توجد بيانات لتصديرها', 'error');
-      return;
+  const handleSyncStats = async () => {
+    setSyncing(true);
+    try {
+      // Get counts from main collections
+      const [unbanSnap, vipSnap, chatSnap] = await Promise.all([
+        getDocs(collection(db, 'unban_requests')),
+        getDocs(collection(db, 'vip_tool_usage')),
+        getDocs(collection(db, 'chat_messages'))
+      ]);
+
+      const realTotal = unbanSnap.size + vipSnap.size + chatSnap.size;
+      
+      const countersRef = doc(db, 'global_stats', 'counters');
+      await setDoc(countersRef, {
+        totalRequests: realTotal,
+        lastUpdate: serverTimestamp(),
+        lastSync: serverTimestamp()
+      }, { merge: true });
+
+      notify(`تمت المزامنة بنجاح! الإجمالي الحقيقي: ${realTotal}`, 'success');
+    } catch (err) {
+      console.error("Sync failed:", err);
+      notify('فشلت عملية المزامنة', 'error');
+    } finally {
+      setSyncing(false);
     }
-    
-    let csv = "ID,Date,Time,Phone,Device,ReasonID\n";
-    stats.forEach(s => {
-      const dt = new Date(s.timestamp);
-      csv += `"${s.id}","${dt.toLocaleDateString()}","${dt.toLocaleTimeString()}","${s.phone}","${s.deviceId}","${s.reasonId}"\n`;
-    });
-    
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `whatsapp-unban-stats-${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    notify('تم تصدير البيانات بنجاح', 'success');
   };
 
-  const handleClearLogs = () => {
-    if (window.confirm('هل أنت متأكد من رغبتك في مسح كافة سجلات الطلبات بشكل نهائي؟ لا يمكن استرجاعها لاحقاً.')) {
-      store.clearStats();
-      setStats([]);
-      notify('تم مسح السجلات بنجاح', 'info');
-    }
+  const handleExportCSV = () => {
+    if (stats.length === 0) return notify('لا توجد بيانات لتصديرها', 'error');
+    let csv = "ID,Date,Time,Phone,Device,ReasonID,UserID\n";
+    stats.forEach(s => {
+      const dt = s.timestamp?.toDate ? s.timestamp.toDate() : new Date(s.timestamp);
+      csv += `"${s.id}","${dt.toLocaleDateString()}","${dt.toLocaleTimeString()}","${s.phone}","${s.deviceId}","${s.reasonId}","${s.userId}"\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `whatsapp-global-stats-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    notify('تم تصدير البيانات بنجاح', 'success');
   };
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 pb-2 border-b border-[var(--neon)]">
         <h3 className="text-xl font-bold flex items-center mb-4 sm:mb-0">
-          <Activity className="w-5 h-5 ml-2" /> سجل الطلبات الشامل
+          <Activity className="w-5 h-5 ml-2" /> إحصائيات النظام العالمية
         </h3>
         <div className="flex gap-2">
+          <button 
+            onClick={handleSyncStats} 
+            disabled={syncing}
+            className="btn-styled flex items-center px-3 py-1 text-sm border-blue-500/50 text-blue-400"
+          >
+            {syncing ? <Loader2 className="w-4 h-4 ml-1 animate-spin" /> : <RefreshCw className="w-4 h-4 ml-1" />}
+            مزامنة البيانات
+          </button>
           <button onClick={handleExportCSV} className="btn-styled flex items-center px-3 py-1 text-sm bg-[var(--dim-green)]">
             <Download className="w-4 h-4 ml-1" /> تصدير CSV
-          </button>
-          <button onClick={handleClearLogs} className="btn-styled flex items-center px-3 py-1 text-sm bg-red-900 border-red-500 text-red-100 hover:bg-red-800">
-            <Eraser className="w-4 h-4 ml-1" /> مسح السجل
           </button>
         </div>
       </div>
       
       <div className="grid grid-cols-2 gap-4 mb-8">
-        <div className="card text-center">
-          <p className="text-xs opacity-80">إجمالي الطلبات</p>
-          <p className="text-2xl font-bold">{stats.length}</p>
+        <div className="card text-center border-yellow-500/30">
+          <p className="text-xs opacity-80">إجمالي الطلبات (عالمي)</p>
+          <p className="text-2xl font-bold text-[var(--neon)]">{globalCounters?.totalRequests || stats.length}</p>
         </div>
         <div className="card text-center">
-          <p className="text-xs opacity-80">نجاح (تقديري)</p>
-          <p className="text-2xl font-bold">{Math.floor(stats.length * 0.71)}</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-xs opacity-80">طلبات اليوم</p>
-          <p className="text-2xl font-bold">
-            {stats.filter(s => new Date(s.timestamp).toDateString() === new Date().toDateString()).length}
+          <p className="text-xs opacity-80">طلب ناجح (مُقدر)</p>
+          <p className="text-2xl font-bold text-green-400">
+            {globalCounters ? Math.floor(globalCounters.totalRequests * 0.72) : Math.floor(stats.length * 0.72)}
           </p>
         </div>
-        <div className="card text-center">
-          <p className="text-xs opacity-80">كفاءة النظام</p>
-          <p className="text-2xl font-bold">71%</p>
-        </div>
       </div>
-
-      <div className="flex flex-col gap-6">
-        <div className="border border-[var(--neon)] bg-[var(--dark-bg)]/50 overflow-x-auto">
-          <table className="w-full text-right text-sm whitespace-nowrap">
-            <thead className="bg-[var(--dim-green)] border-b border-[var(--neon)]">
-              <tr>
-                <th className="p-3">التاريخ</th>
-                <th className="p-3">الهاتف</th>
-                <th className="p-3">الجهاز</th>
+      
+      <div className="border border-[var(--neon)] bg-[var(--dark-bg)]/50 overflow-x-auto">
+        <table className="w-full text-right text-sm whitespace-nowrap">
+          <thead className="bg-[var(--dim-green)] border-b border-[var(--neon)]">
+            <tr>
+              <th className="p-3">التاريخ</th>
+              <th className="p-3">الهاتف</th>
+              <th className="p-3">رقم المستخدم</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map(stat => (
+              <tr key={stat.id} className="border-b border-[var(--grid-line)] hover:bg-[var(--dim-green)]/30 transition-colors">
+                <td className="p-3 font-mono">
+                  {stat.timestamp?.toDate ? stat.timestamp.toDate().toLocaleString('en-GB') : new Date(stat.timestamp).toLocaleString('en-GB')}
+                </td>
+                <td className="p-3 font-mono" dir="ltr">{stat.phone}</td>
+                <td className="p-3 text-[10px] opacity-60 font-mono">{stat.userId}</td>
               </tr>
-            </thead>
-            <tbody>
-              {stats.slice().reverse().map(stat => (
-                <tr key={stat.id} className="border-b border-[var(--grid-line)] hover:bg-[var(--dim-green)]/30 transition-colors">
-                  <td className="p-3 font-mono">{new Date(stat.timestamp).toLocaleString('en-GB')}</td>
-                  <td className="p-3 font-mono" dir="ltr">{stat.phone}</td>
-                  <td className="p-3">{stat.deviceId}</td>
-                </tr>
-              ))}
-              {stats.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="p-6 text-center opacity-50">لا توجد سجلات بعد</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -254,18 +346,97 @@ function StatsView() {
 function UsersAdmin() {
   const { notify } = useNotification();
   const [users, setUsers] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newDevice, setNewDevice] = useState('');
   const [notifTitle, setNotifTitle] = useState('');
   const [notifBody, setNotifBody] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, 'app_users'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const qUsers = query(collection(db, 'app_users'));
+    const unsubUsers = onSnapshot(qUsers, (snapshot) => {
       const u = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setUsers(u);
     });
-    return () => unsubscribe();
+
+    const qAccounts = query(collection(db, 'app_accounts'));
+    const unsubAccounts = onSnapshot(qAccounts, (snapshot) => {
+      const a = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAccounts(a);
+    });
+
+    return () => {
+      unsubUsers();
+      unsubAccounts();
+    };
   }, []);
+
+  const createAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUsername.trim() || !newPassword.trim()) return;
+    setIsCreating(true);
+    try {
+      await addDoc(collection(db, 'app_accounts'), {
+        username: newUsername,
+        password: newPassword,
+        displayName: newName,
+        phoneNumber: newPhone,
+        deviceName: newDevice,
+        status: 'active',
+        createdAt: serverTimestamp()
+      });
+      notify('تم إنشاء حساب المستخدم بنجاح', 'success');
+      setNewUsername('');
+      setNewPassword('');
+      setNewName('');
+      setNewPhone('');
+      setNewDevice('');
+    } catch (e) {
+      notify('فشل في إنشاء الحساب', 'error');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const toggleAccountStatus = async (accountId: string, currentStatus: string) => {
+    try {
+      await updateDoc(doc(db, 'app_accounts', accountId), {
+        status: currentStatus === 'active' ? 'banned' : 'active'
+      });
+      notify('تم تحديث حالة الحساب بنجاح', 'success');
+    } catch (e) {
+      notify('فشل في تحديث الحالة', 'error');
+    }
+  };
+
+  const toggleAccountVip = async (accountId: string, currentIsVip: boolean) => {
+    try {
+      await updateDoc(doc(db, 'app_accounts', accountId), {
+        isVip: !currentIsVip
+      });
+      notify(`تم ${!currentIsVip ? 'تفعيل' : 'إلغاء'} الـ VIP للمستخدم بنجاح`, 'success');
+    } catch (e) {
+      notify('فشل في تحديث حالة الـ VIP', 'error');
+    }
+  };
+
+  const deleteAccount = async (accountId: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا الحساب نهائياً؟')) return;
+    try {
+      // For deletion we need deleteDoc (let's assume it's imported or I should add it)
+      // Actually updateDoc works for the request, but deletion is safer for "admin cleanup"
+      // I'll stick to BAN for now as requested, but I'll add a delete field or use status
+      await updateDoc(doc(db, 'app_accounts', accountId), { status: 'deleted' });
+      notify('تم حذف الحساب', 'info');
+    } catch (e) {
+      notify('فشل الحذف', 'error');
+    }
+  };
 
   const toggleBan = async (userId: string, currentBlocked: boolean) => {
     try {
@@ -300,9 +471,131 @@ function UsersAdmin() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       <div>
         <h3 className="text-xl font-bold mb-6 flex items-center border-b border-[var(--neon)] pb-2 text-[var(--neon)]">
+          <ShieldCheck className="w-5 h-5 ml-2" /> مـركـز إدارة الـحـسـابـات (جـديـد)
+        </h3>
+        
+        <div className="card mb-6 bg-[var(--dim-green)]/10 border-dashed">
+          <form onSubmit={createAccount} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="input-group">
+                <label className="text-xs mb-1 opacity-70">اسم المستخدم (بالإنجليزي للدخول)</label>
+                <input 
+                  type="text" 
+                  placeholder="USERNAME" 
+                  className="input-styled"
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value)}
+                />
+              </div>
+              <div className="input-group">
+                <label className="text-xs mb-1 opacity-70">كلمة المرور</label>
+                <input 
+                  type="text" 
+                  placeholder="PASSWORD" 
+                  className="input-styled"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+              </div>
+              <div className="input-group">
+                <label className="text-xs mb-1 opacity-70">الاسم الكامل (بالعربي)</label>
+                <input 
+                  type="text" 
+                  placeholder="مثال: أحمد محمد" 
+                  className="input-styled"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+              </div>
+              <div className="input-group">
+                <label className="text-xs mb-1 opacity-70">رقم الهاتف</label>
+                <input 
+                  type="text" 
+                  placeholder="+967..." 
+                  className="input-styled text-left"
+                  dir="ltr"
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                />
+              </div>
+              <div className="input-group">
+                <label className="text-xs mb-1 opacity-70">اسم الجهاز</label>
+                <input 
+                  type="text" 
+                  placeholder="مثال: Samsung S22" 
+                  className="input-styled"
+                  value={newDevice}
+                  onChange={(e) => setNewDevice(e.target.value)}
+                />
+              </div>
+              
+              <div className="flex items-end">
+                <button 
+                  type="submit" 
+                  disabled={isCreating}
+                  className="btn-styled w-full flex items-center justify-center gap-2 py-3"
+                >
+                  {isCreating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+                  إنشاء الحساب
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3">
+           {accounts.filter(a => a.status !== 'deleted').map(acc => (
+             <div key={acc.id} className="card flex items-center justify-between border-[var(--neon)]/30">
+               <div className="flex items-center gap-4">
+                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${acc.status === 'banned' ? 'bg-red-950 text-red-500' : 'bg-green-950 text-green-500'}`}>
+                   <User className="w-6 h-6" />
+                 </div>
+                 <div>
+                   <p className="font-bold">{acc.displayName || acc.username} {acc.phoneNumber && <span className="text-[10px] text-[var(--neon)] opacity-60">({acc.phoneNumber})</span>}</p>
+                   <div className="flex items-center gap-2 mt-0.5">
+                     <p className="text-[10px] opacity-50 font-mono tracking-widest uppercase">USER: {acc.username} | PASS: {acc.password}</p>
+                     {acc.deviceName && <p className="text-[9px] bg-white/5 px-1.5 rounded opacity-40">📱 {acc.deviceName}</p>}
+                   </div>
+                 </div>
+               </div>
+               
+               <div className="flex gap-2">
+                 <button 
+                   onClick={() => toggleAccountVip(acc.id, acc.isVip || false)}
+                   className={`px-3 py-1 text-xs border rounded transition-all flex items-center gap-1 ${acc.isVip ? 'bg-yellow-900/30 border-yellow-500 text-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.2)]' : 'bg-gray-900/30 border-gray-500 text-gray-500'}`}
+                 >
+                   <Crown className={`${acc.isVip ? 'fill-yellow-500' : ''} w-3 h-3`} />
+                   {acc.isVip ? 'مُشترك VIP' : 'تفعيل VIP'}
+                 </button>
+
+                 <button 
+                   onClick={() => toggleAccountStatus(acc.id, acc.status)}
+                   className={`px-3 py-1 text-xs border rounded transition-all ${acc.status === 'banned' ? 'bg-green-900/30 border-green-500 text-green-500' : 'bg-red-900/30 border-red-500 text-red-500'}`}
+                 >
+                   {acc.status === 'banned' ? 'إلغاء الحظر' : 'حظر الدخول'}
+                 </button>
+                 <button 
+                   onClick={() => deleteAccount(acc.id)}
+                   className="p-2 text-red-500 hover:bg-red-500/10 rounded border border-red-500/30"
+                 >
+                   <Trash2 className="w-4 h-4" />
+                 </button>
+               </div>
+             </div>
+           ))}
+           {accounts.filter(a => a.status !== 'deleted').length === 0 && (
+             <div className="text-center p-8 border border-dashed border-gray-800 opacity-40 text-sm">
+                لا توجد حسابات مسجلة. قم بإنشاء أول حساب بالأعلى.
+             </div>
+           )}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-xl font-bold mb-6 flex items-center border-b border-[var(--neon)] pb-2 text-blue-400">
           <Bell className="w-5 h-5 ml-2" /> إرسال إشعار عام للمشتركين
         </h3>
         <div className="card space-y-4">

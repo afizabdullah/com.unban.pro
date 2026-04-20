@@ -74,6 +74,44 @@
         "type": { "type": "string" }
       },
       "required": ["title", "message", "timestamp"]
+    },
+    "AppAccount": {
+      "title": "User Account",
+      "description": "Credentials created by admin for user access.",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "displayName": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "deviceName": { "type": "string" },
+        "isVip": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "banned", "deleted"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["username", "password", "status"]
+    },
+    "GlobalStat": {
+      "title": "Global Statistics",
+      "description": "Aggregated statistics for the whole system.",
+      "type": "object",
+      "properties": {
+        "totalRequests": { "type": "number" },
+        "lastUpdate": { "type": "string" }
+      }
+    },
+    "UnbanRequest": {
+      "title": "Unban Request",
+      "description": "A record of an unban request made by a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "phone": { "type": "string" },
+        "reasonId": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["userId", "phone", "reasonId", "deviceId", "timestamp"]
     }
   },
   "firestore": {
@@ -100,6 +138,22 @@
         "$ref": "#/entities/AppNotification"
       },
       "description": "Global system notifications."
+    },
+    "/app_accounts/{accountId}": {
+      "schema": {
+        "$ref": "#/entities/AppAccount"
+      },
+      "description": "Accounts managed by admin for access control."
+    },
+    "/unban_requests/{requestId}": {
+      "schema": {
+        "$ref": "#/entities/UnbanRequest"
+      },
+      "description": "Individual unban request logs."
+    },
+    "/global_stats/counters": {
+       "schema": { "$ref": "#/entities/GlobalStat" },
+       "description": "Global hit counters."
     }
   }
 }
