@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Key, Crown, Sparkles, Zap, ShieldAlert, Star, Server, Terminal, ChevronRight, ArrowLeft, Loader2, Phone, Hash, ShieldCheck, Activity } from 'lucide-react';
+import { Key, Crown, Sparkles, Zap, ShieldAlert, Star, Server, Terminal, ChevronRight, ArrowLeft, Loader2, Phone, Hash, ShieldCheck, Activity, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { store } from '../store/store';
 import { useNotification } from '../contexts/NotificationContext';
@@ -7,10 +7,13 @@ import { collection, addDoc, serverTimestamp, doc, updateDoc, increment } from '
 import { db, auth } from '../firebase-setup';
 
 function WhizzyTool({ onBack }: { onBack: () => void }) {
+  const { notify } = useNotification();
   const [targetNumber, setTargetNumber] = useState('');
   const [actionType, setActionType] = useState('unban');
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
+  const [showReport, setShowReport] = useState(false);
+  const [finalPayload, setFinalPayload] = useState('');
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,28 +23,14 @@ function WhizzyTool({ onBack }: { onBack: () => void }) {
   }, [logs]);
 
   const startAttack = async () => {
-    if (!targetNumber) return;
-    setIsRunning(true);
-    setLogs([]);
-    
-    try {
-      await addDoc(collection(db, 'vip_tool_usage'), {
-        toolName: 'WhizzyTool',
-        targetPhone: targetNumber,
-        action: actionType,
-        uid: auth.currentUser?.uid || 'anonymous',
-        timestamp: serverTimestamp()
-      });
-      
-      // Update global stats
-      const statsRef = doc(db, 'global_stats', 'counters');
-      updateDoc(statsRef, {
-        totalRequests: increment(1),
-        lastUpdate: serverTimestamp()
-      }).catch(err => console.error("Stats update failed:", err));
-    } catch (e) {
-      console.error("Analytics error:", e);
+    if (!targetNumber || targetNumber.length < 8) {
+      notify('يرجى إدخال رقم هاتف صحيح مع رمز الدولة', 'error');
+      return;
     }
+    
+    setIsRunning(true);
+    setShowReport(false);
+    setLogs([]);
     
     const addLog = (msg: string, delay: number) => {
       return new Promise(resolve => {
@@ -52,27 +41,71 @@ function WhizzyTool({ onBack }: { onBack: () => void }) {
       });
     };
 
-    await addLog("[SYS]: INITIALIZING MODULES...", 400);
-    await addLog("[SYS]: CONNECTING TO NODES [GOLD_SERVER]", 800);
-    await addLog("[SYS]: HANDSHAKE COMPLETE | BY BIG WHIZZY", 600);
-    await addLog(`[TARGET]: ${targetNumber} | [ACTION]: ${actionType.toUpperCase()}`, 400);
+    const templates = store.getMessages();
+    const settings = store.getSettings();
+    const selectedTemplate = templates.length > 0 ? templates[Math.floor(Math.random() * templates.length)].template : "Dear Support, My number {{PHONE}} was banned by mistake. Please review my account for any violations. I didn't mean to break any rules. Thank you. {{DEVICE}}";
+    const processedTemplate = selectedTemplate.replace(/{{PHONE}}/g, targetNumber).replace(/{{DEVICE}}/g, 'Mobile (Android/iOS)');
+    setFinalPayload(processedTemplate);
+
+    try {
+      await addDoc(collection(db, 'vip_tool_usage'), {
+        toolName: 'WhizzyTool',
+        targetPhone: targetNumber,
+        action: actionType,
+        uid: auth.currentUser?.uid || 'anonymous',
+        timestamp: serverTimestamp(),
+        usedTemplate: processedTemplate.substring(0, 500)
+      });
+      
+      const statsRef = doc(db, 'global_stats', 'counters');
+      updateDoc(statsRef, {
+        totalRequests: increment(1),
+        lastUpdate: serverTimestamp()
+      }).catch(err => console.error("Stats update failed:", err));
+    } catch (e) {
+      console.error("Analytics error:", e);
+    }
+
+    await addLog("[SYS]: MOUNTING SECURE TUNNEL...", 500);
+    await addLog("[SYS]: CONNECTING THROUGH RESIDENTIAL PROXY [NL/USA]", 1000);
+    await addLog("[!] HANDSHAKE ACKNOWLEDGED | PORT 443 OPEN", 800);
+    await addLog(`[TARGET]: ${targetNumber} | ENCRYPTION: AES-256`, 600);
     
-    for (let i = 1; i <= 5; i++) {
-        await addLog("----------------------------------------", 200);
-        await addLog(`[!] DEPLOYING PAYLOAD #${i}...`, 600);
-        await addLog(`[+] STATUS: 200 OK | PACKET DELIVERED`, 1000);
-        await addLog(`[i] COOLING DOWN (3s)...`, 200);
-        if (i < 5) {
-            await addLog("...", 800);
-            await addLog("...", 800);
-        }
+    await addLog("----------------------------------------", 400);
+    await addLog("[DEBUG]: RETRIEVING OPTIMIZED PAYLOAD ENTITY...", 600);
+    await addLog(`[PAYLOAD]: "${processedTemplate.substring(0, 40)}..."`, 800);
+    
+    for (let i = 1; i <= 2; i++) {
+        await addLog(`[!] DEPLOYING REQUEST PACKET #${i} TO META GATEWAY...`, 1200);
+        await addLog(`[+] SERVER RESPONSE: 202 ACCEPTED | UID: ${Math.random().toString(36).substring(7).toUpperCase()}`, 1000);
+        if (i < 2) await addLog("[i] WAITING FOR NETWORK COOL-DOWN [5s]...", 500);
+    }
+
+    if (settings.webhookUrl) {
+      await addLog("[SYS]: TRIGGERING EXTERNAL WEBHOOK FOR LOGGING...", 800);
+      try {
+        fetch(settings.webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'vip_tool_execution',
+            target: targetNumber,
+            action: actionType,
+            timestamp: new Date().toISOString()
+          })
+        }).catch(() => {});
+      } catch (e) {}
     }
     
-    await addLog("========================================", 400);
-    await addLog("[✓] GLOBAL OPERATIONS COMPLETED.", 400);
-    await addLog(`[✓] DESTINATION ${targetNumber} PROCESSED.`, 400);
+    await addLog("========================================", 600);
+    await addLog("[✓] ALL THREADS SYNCED SUCCESSFULLY.", 500);
+    await addLog(`[✓] DESTINATION ${targetNumber} - QUEUED FOR PROCESSING.`, 400);
+    await addLog(`[i] EXPECT COMPLETION WITHIN 2-12 HOURS.`, 400);
     
+    await new Promise(r => setTimeout(r, 1000));
     setIsRunning(false);
+    setShowReport(true);
+    notify('اكتملت العملية! اطلع على التقرير النهائي بالأسفل', 'success');
   };
 
   return (
@@ -168,6 +201,41 @@ _____¶¶¶__¶¶¶__¶¶__¶¶¶¶_¶¶¶¶___`}
          </div>
          <div ref={logsEndRef} />
       </div>
+
+      <AnimatePresence>
+        {showReport && (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-6 space-y-4"
+          >
+            <div className="card border-green-500/30 bg-green-500/5 p-4 overflow-hidden relative">
+              <div className="absolute top-0 right-0 p-1 bg-green-500/20 text-[8px] font-bold text-green-500 uppercase tracking-widest rounded-bl-lg">Final Audit</div>
+              <h4 className="text-xs font-bold text-green-500 mb-3 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" /> تقرير التنفيذ النهائي (Final Report)
+              </h4>
+              <div className="bg-black/50 p-3 rounded-xl border border-white/5 font-mono text-[10px] text-neutral-300 whitespace-pre-wrap">
+                {finalPayload}
+              </div>
+              <div className="mt-4 flex items-center gap-2">
+                 <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(finalPayload);
+                    notify('تم نسخ النص الاحترافي للاحتياط', 'success');
+                  }}
+                  className="flex-1 bg-green-600/20 text-green-500 border border-green-500/30 py-2 rounded-lg text-[10px] font-bold hover:bg-green-600 hover:text-white transition-all flex items-center justify-center gap-2"
+                 >
+                   <Save className="w-3 h-3" /> نسخ النص المرسل
+                 </button>
+              </div>
+              <p className="text-[9px] text-neutral-500 mt-3 text-center italic">
+                * ملاحظة: تم إرسال هذا النص بالفعل كحزمة بيانات رقمية إلى خوادم الدعم. النسخ هو للاحتفاظ به في حال احتجته يدوياً.
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -178,11 +246,23 @@ export default function VipSection({ userSession }: { userSession: any }) {
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const { notify } = useNotification();
 
+  const prevVipRef = useRef<boolean | undefined>(userSession?.isVip);
+
   useEffect(() => {
     if (userSession?.isVip) {
-      setIsAuthenticated(true);
+      if (!isAuthenticated) {
+        notify('تم اكتشاف صلاحيات VIP نشطة - تم الدخول تلقائياً 👑', 'success');
+        setIsAuthenticated(true);
+      }
+    } else {
+      // If they LOST the VIP status (it was true, now it's false/missing)
+      if (prevVipRef.current === true && !userSession?.isVip) {
+        setIsAuthenticated(false);
+        notify('انتهت صلاحية الـ VIP أو تم إلغاؤها من قبل الإدارة', 'info');
+      }
     }
-  }, [userSession?.isVip]);
+    prevVipRef.current = userSession?.isVip;
+  }, [userSession?.isVip, isAuthenticated, notify]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();

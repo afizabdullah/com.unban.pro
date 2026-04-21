@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, LayoutDashboard, Database, Activity, Smartphone, LogOut, Plus, Trash2, Save, AlertTriangle, Globe, Settings, Download, Eraser, FileText, Users, Bell, Ban, Sparkles, Loader2, ShieldCheck, User, Crown, RefreshCw } from 'lucide-react';
+import { Lock, LayoutDashboard, Database, Activity, Smartphone, LogOut, Plus, Trash2, Save, AlertTriangle, Globe, Settings, Download, Eraser, FileText, Users, Bell, Ban, Sparkles, Loader2, ShieldCheck, User, Crown, RefreshCw, Wand2, ChevronRight, ChevronLeft, Check, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { store, Device, RequestStat, MessageTemplate, BanReason, Language, AppSettings } from '../store/store';
 import { useNotification } from '../contexts/NotificationContext';
@@ -54,6 +54,17 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
     if (password === settings.adminPassword) {
       setIsAuthenticated(true);
       setError('');
+      // Elevate to admin in Firestore if password is correct
+      if (auth.currentUser) {
+        setDoc(doc(db, 'admins', auth.currentUser.uid), {
+          role: 'admin',
+          via: 'password',
+          timestamp: serverTimestamp()
+        }, { merge: true }).catch(err => {
+          console.error("Admin elevation failed:", err);
+          notify('خطأ في تفعيل صلاحيات الخادم. يرجى تسجيل الدخول عبر Google مرة واحدة.', 'info');
+        });
+      }
     } else {
       setError('كلمة المرور غير صحيحة. اختراق غير مصرح به.');
     }
@@ -232,7 +243,12 @@ function StatsView() {
     const q = query(collection(db, 'unban_requests'), orderBy('timestamp', 'desc'), limit(50));
     const unsubRequests = onSnapshot(q, (snapshot) => {
       setStats(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => console.error("AdminPanel unban_requests listener error:", err));
+    }, (err) => {
+      console.error("AdminPanel unban_requests listener error:", err);
+      if (err.code === 'permission-denied') {
+        notify('ليس لديك صلاحيات كافية لعرض جميع العمليات. سجل دخول Google لتفعيل الوصول الكامل.', 'error');
+      }
+    });
 
     return () => {
       unsubCounters();
@@ -721,26 +737,26 @@ function MessagesAdmin() {
   const [languages, setLanguages] = useState<Language[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   
-  const [selectedReason, setSelectedReason] = useState(reasons[0]?.id || '1');
-  const [selectedLang, setSelectedLang] = useState(languages[0]?.id || 'ar');
+  const [selectedReason, setSelectedReason] = useState('');
+  const [selectedLang, setSelectedLang] = useState('');
   const [targetDevice, setTargetDevice] = useState('');
   const [currentText, setCurrentText] = useState('');
   
   const [aiPrompt, setAiPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
 
   useEffect(() => {
     setMessages(store.getMessages());
-    setReasons(store.getReasons());
-    setLanguages(store.getLanguages());
+    const r = store.getReasons();
+    const l = store.getLanguages();
+    setReasons(r);
+    setLanguages(l);
     setDevices(store.getDevices());
+    
+    if (r.length > 0) setSelectedReason(r[0].id);
+    if (l.length > 0) setSelectedLang(l[0].id);
   }, []);
-
-  // Update selected dropdowns when reasons/languages are loaded if empty
-  useEffect(() => {
-    if (!selectedReason && reasons.length > 0) setSelectedReason(reasons[0].id);
-    if (!selectedLang && languages.length > 0) setSelectedLang(languages[0].id);
-  }, [reasons, languages, selectedReason, selectedLang]);
 
   useEffect(() => {
     const msg = messages.find(m => 
@@ -828,9 +844,33 @@ function MessagesAdmin() {
   return (
     <div className="space-y-8">
       <div>
-        <h3 className="text-xl font-bold mb-6 flex items-center border-b border-[var(--neon)] pb-2">
-          <Database className="w-5 h-5 ml-2" /> محرر كودات فك الحظر
-        </h3>
+        <div className="flex justify-between items-center mb-6 border-b border-[var(--neon)] pb-2">
+          <h3 className="text-xl font-bold flex items-center">
+            <Database className="w-5 h-5 ml-2" /> محرر كودات فك الحظر
+          </h3>
+          <button 
+            onClick={() => setShowWizard(true)}
+            className="flex items-center gap-2 px-4 py-1.5 bg-red-600/20 border border-red-500/30 rounded-lg text-red-500 text-xs font-bold hover:bg-red-500 hover:text-white transition-all shadow-[0_0_10px_rgba(239,68,68,0.2)]"
+          >
+            <Wand2 className="w-4 h-4" /> مساعد إنشاء القوالب
+          </button>
+        </div>
+
+        {showWizard && (
+          <TemplateWizard 
+            reasons={reasons} 
+            languages={languages} 
+            devices={devices} 
+            onClose={() => setShowWizard(false)}
+            onSave={(newTemplate) => {
+              const updated = [...messages, newTemplate];
+              setMessages(updated);
+              store.saveMessages(updated);
+              setShowWizard(false);
+              notify('تم إضافة القالب الجديد بنجاح', 'success');
+            }}
+          />
+        )}
         
         <div className="card space-y-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-1 bg-[var(--neon)] h-full"></div>
@@ -979,6 +1019,219 @@ function MessagesAdmin() {
   );
 }
 
+function TemplateWizard({ reasons, languages, devices, onClose, onSave }: { 
+  reasons: BanReason[], 
+  languages: Language[], 
+  devices: Device[], 
+  onClose: () => void,
+  onSave: (t: MessageTemplate) => void 
+}) {
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState({
+    lang: languages[0]?.id || '',
+    reason: reasons[0]?.id || '',
+    device: '',
+    template: ''
+  });
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [prompt, setPrompt] = useState('');
+
+  const next = () => setStep(s => s + 1);
+  const prev = () => setStep(s => s - 1);
+
+  const handleGenerate = async () => {
+    const settings = store.getSettings();
+    if (!settings.externalApiKey) {
+      alert('يرجى تزويد مفتاح Gemini API في تبويب الإعدادات أولاً');
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const genAI = new GoogleGenAI({ apiKey: settings.externalApiKey });
+      const response = await genAI.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Create a professional WhatsApp ban removal template.
+        Language: ${languages.find(l => l.id === data.lang)?.name}.
+        Reason: ${reasons.find(r => r.id === data.reason)?.name}.
+        Device: ${data.device || 'General'}.
+        Draft Context: ${prompt || 'Standard formal appeal'}.
+        Rules: Use {{PHONE}} and {{DEVICE}} as placeholders. Formal tone. Return ONLY text.`
+      });
+      const result = response.text;
+      if (result) {
+        setData({ ...data, template: result.trim() });
+        setStep(4);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+    >
+      <div className="card max-w-2xl w-full p-0 overflow-hidden border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.2)]">
+        <div className="bg-red-950/40 p-4 border-b border-red-500/30 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Wand2 className="w-5 h-5 text-red-500" />
+            <h3 className="font-bold text-white uppercase tracking-widest text-sm">مساعد إنشاء القوالب الذكي</h3>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full transition-colors">
+            <X className="w-5 h-5 text-neutral-400" />
+          </button>
+        </div>
+
+        <div className="p-6 md:p-8">
+          {/* Progress Bar */}
+          <div className="flex justify-between mb-8 relative">
+            <div className="absolute top-1/2 left-0 w-full h-0.5 bg-neutral-800 -z-0"></div>
+            <div className="absolute top-1/2 left-0 h-0.5 bg-red-600 transition-all duration-500 -z-0" style={{ width: `${((step-1)/3)*100}%` }}></div>
+            {[1, 2, 3, 4].map(s => (
+              <div key={s} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold relative z-10 transition-all duration-300 ${step >= s ? 'bg-red-600 border-red-400 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)]' : 'bg-neutral-900 border-neutral-700 text-neutral-500'}`}>
+                {step > s ? <Check className="w-4 h-4" /> : s}
+              </div>
+            ))}
+          </div>
+
+          <div className="min-h-[250px]">
+            {step === 1 && (
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4 text-center">
+                <Globe className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                <h4 className="text-lg font-bold text-white">اختر لغة القالب</h4>
+                <div className="grid grid-cols-2 gap-3 max-w-sm mx-auto">
+                  {languages.map(l => (
+                    <button 
+                      key={l.id}
+                      onClick={() => setData({ ...data, lang: l.id })}
+                      className={`p-4 rounded-xl border text-sm font-bold transition-all ${data.lang === l.id ? 'bg-red-600/20 border-red-500 text-red-500' : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-600'}`}
+                    >
+                      {l.name}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {step === 2 && (
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4 text-center">
+                <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                <h4 className="text-lg font-bold text-white">حدد سبب الحظر المستهدف</h4>
+                <div className="grid grid-cols-1 gap-2 max-w-md mx-auto">
+                  {reasons.map(r => (
+                    <button 
+                      key={r.id}
+                      onClick={() => setData({ ...data, reason: r.id })}
+                      className={`p-3 rounded-xl border text-sm font-bold text-right transition-all px-6 ${data.reason === r.id ? 'bg-red-600/20 border-red-500 text-red-500' : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-600'}`}
+                    >
+                      {r.name}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {step === 3 && (
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4 text-center">
+                <Smartphone className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                <h4 className="text-lg font-bold text-white">الجهاز المستهدف (اختياري)</h4>
+                <div className="max-w-md mx-auto space-y-4">
+                  <input 
+                    type="text" 
+                    list="wizard-devices"
+                    placeholder="اكتب اسم الجهاز أو اتركه فارغاً للكل..."
+                    className="input-styled text-center"
+                    value={data.device}
+                    onChange={(e) => setData({ ...data, device: e.target.value })}
+                  />
+                  <datalist id="wizard-devices">
+                    {devices.map(d => <option key={d.id} value={d.name} />)}
+                  </datalist>
+                  <p className="text-[10px] text-neutral-500 uppercase tracking-widest">تلميح: تحديد جهاز معين يساعد في قبول الطلب بشكل أسرع</p>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 4 && (
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="text-sm font-bold text-red-500 uppercase flex items-center gap-2">
+                    <Sparkles className="w-4 h-4" /> مـسـودة الـقـالـب الـنـهـائـي
+                  </h4>
+                  <button 
+                    onClick={() => setStep(4.5)} 
+                    className="text-[10px] bg-purple-600/20 text-purple-400 px-2 py-1 rounded border border-purple-500/30 hover:bg-purple-500 hover:text-white transition-all"
+                  >
+                    إعادة التوليد بذكاء ✨
+                  </button>
+                </div>
+                <textarea 
+                  className="input-styled h-40 text-xs leading-relaxed font-mono"
+                  value={data.template}
+                  onChange={(e) => setData({ ...data, template: e.target.value })}
+                  dir="auto"
+                  placeholder="اكتب النص هنا أو استخدم الذكاء الاصطناعي لتوليده..."
+                />
+              </motion.div>
+            )}
+
+            {step === 4.5 && (
+              <motion.div initial={{ opacity: 1 }} className="space-y-6 text-center py-4">
+                <Sparkles className="w-16 h-16 text-purple-500 mx-auto animate-pulse" />
+                <div className="max-w-md mx-auto space-y-4">
+                  <h4 className="text-lg font-bold text-white">توليد بواسطة الذكاء الاصطناعي</h4>
+                  <p className="text-xs text-neutral-500">أوصف طلبك وسيقوم Gemini بكتابة مسودة احترافية مع جميع المتغيرات المطلوبة.</p>
+                  <textarea 
+                    className="input-styled h-24 text-center text-sm"
+                    placeholder="مثال: طلب رسمي ومهذب بلهجة صادقة لفك حظر رقم سامسونج..."
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                  />
+                  <button 
+                    onClick={handleGenerate}
+                    disabled={isGenerating || !prompt.trim()}
+                    className="btn-styled bg-purple-600 border-purple-400 w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Sparkles className="w-4 h-4" /> بـدء الـتـولـيـد الـذكـي</>}
+                  </button>
+                  <button onClick={() => setStep(4)} className="text-xs text-neutral-500 underline">تخطي، سأكتبه يدوياً</button>
+                </div>
+              </motion.div>
+            )}
+          </div>
+
+          {step < 4.5 && (
+            <div className="flex justify-between items-center mt-10 pt-6 border-t border-red-500/10">
+              <button 
+                onClick={prev} 
+                disabled={step === 1}
+                className="flex items-center gap-2 text-neutral-500 hover:text-white disabled:opacity-0 transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5" />
+                <span className="text-xs font-bold">السابق</span>
+              </button>
+              
+              <button 
+                onClick={step === 4 ? () => onSave({ id: Date.now().toString(), languageId: data.lang, reasonId: data.reason, targetDevice: data.device || undefined, template: data.template }) : (step === 3 && !data.template ? () => setStep(4.5) : next)}
+                disabled={(step === 1 && !data.lang) || (step === 2 && !data.reason)}
+                className="flex items-center gap-2 bg-red-600 text-white px-8 py-2.5 rounded-xl font-bold hover:bg-red-500 transition-all shadow-[0_0_15px_rgba(239,68,68,0.3)]"
+              >
+                <span className="text-sm">{step === 4 ? 'حفظ وإغلاق' : (step === 3 && !data.template ? 'توليد النص' : 'التالي')}</span>
+                {step === 4 ? <Check className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 function ReasonsAdmin() {
   const [reasons, setReasons] = useState<BanReason[]>([]);
   const [newReason, setNewReason] = useState('');
@@ -1117,6 +1370,7 @@ function LanguagesAdmin() {
 function SettingsAdmin() {
   const { notify } = useNotification();
   const [settings, setSettings] = useState<AppSettings>({ adminPassword: '' });
+  const [isChecking, setIsChecking] = useState(false);
   
   useEffect(() => {
     setSettings(store.getSettings());
@@ -1124,6 +1378,27 @@ function SettingsAdmin() {
 
   const handleChange = (field: keyof AppSettings, value: string) => {
     setSettings(prev => ({ ...prev, [field]: value }));
+  };
+
+  const checkApiKey = async () => {
+    if (!settings.externalApiKey) {
+      notify('يرجى إدخال مفتاح API أولاً', 'error');
+      return;
+    }
+    setIsChecking(true);
+    try {
+      const genAI = new GoogleGenAI({ apiKey: settings.externalApiKey });
+      await genAI.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: "test"
+      });
+      notify('تم التحقق من مفتاح API: الاتصال ناجح ✅', 'success');
+    } catch (e) {
+      console.error(e);
+      notify('فشل التحقق: مفتاح API غير صالح أو منتهي الصلاحية ❌', 'error');
+    } finally {
+      setIsChecking(false);
+    }
   };
 
   const handleSave = () => {
@@ -1168,14 +1443,24 @@ function SettingsAdmin() {
           <h4 className="text-lg font-bold border-b border-[var(--grid-line)] pb-2">مفاتيح الربط (API Keys)</h4>
           <div className="input-group">
             <label>مفتاح API الخارجي (مثل: OpenAI / Gemini / إلخ):</label>
-            <input 
-              type="password" 
-              placeholder="sk-..."
-              className="input-styled font-mono"
-              value={settings.externalApiKey || ''}
-              onChange={(e) => handleChange('externalApiKey', e.target.value)}
-              dir="ltr"
-            />
+            <div className="flex gap-2">
+              <input 
+                type="password" 
+                placeholder="sk-..."
+                className="input-styled font-mono flex-1"
+                value={settings.externalApiKey || ''}
+                onChange={(e) => handleChange('externalApiKey', e.target.value)}
+                dir="ltr"
+              />
+              <button 
+                onClick={checkApiKey}
+                disabled={isChecking}
+                className="btn-styled bg-neutral-900 border-neutral-700 text-xs px-4 flex items-center gap-2"
+              >
+                {isChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+                فحص
+              </button>
+            </div>
             <p className="text-xs opacity-70 mt-1">يُستخدم لربط التطبيق بخدمات الذكاء الاصطناعي الخارجية لتوليد الرسائل المتقدمة.</p>
           </div>
         </div>
@@ -1193,6 +1478,22 @@ function SettingsAdmin() {
               dir="ltr"
             />
             <p className="text-xs opacity-70 mt-1">يُستخدم لإرسال إشعارات أو بيانات الطلبات إلى نظام خارجي أو سيرفرك الخاص.</p>
+          </div>
+        </div>
+
+        <div className="card space-y-4">
+          <h4 className="text-lg font-bold border-b border-[var(--grid-line)] pb-2 text-[var(--neon)]">البيانات الفنية للدعم (Technical Info)</h4>
+          <div className="input-group">
+            <label>قالب البيانات الفنية المرفقة (Support Info Template):</label>
+            <p className="text-[10px] opacity-70 mb-2">
+              استخدم المتغيرات التالية: {'{{PHONE}}'}, {'{{MODEL}}'}, {'{{BOARD}}'}, {'{{BUILD}}'}, {'{{CARRIER}}'}, {'{{MCC_MNC}}'}, {'{{OS}}'}, {'{{USER_AGENT}}'}, {'{{UUID}}'}, {'{{RANDOM_ID}}'}, {'{{ISO_DATE}}'}, {'{{MFG}}'}
+            </p>
+            <textarea 
+              className="input-styled h-64 font-mono text-[10px] leading-tight"
+              value={settings.supportInfoTemplate || ''}
+              onChange={(e) => handleChange('supportInfoTemplate', e.target.value)}
+              dir="ltr"
+            />
           </div>
         </div>
 

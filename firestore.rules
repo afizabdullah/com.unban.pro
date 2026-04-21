@@ -35,13 +35,16 @@ service cloud.firestore {
     // --- Entity Validations ---
 
     function isValidChatMessage(data) {
-      return data.size() == 6
-        && data.text is string && data.text.size() <= 1000
+      return data.text is string && data.text.size() <= 2000
         && data.senderName is string && data.senderName.size() <= 100
-        && data.avatarSeed is string && data.avatarSeed.size() <= 100
         && data.uid == request.auth.uid
-        && data.visibility == 'public'
-        && data.timestamp == request.time;
+        && data.visibility in ['public', 'private']
+        && (data.timestamp == request.time || data.timestamp == null) // Allow null temporarily if needed, but request.time is better
+        && (!('avatarSeed' in data) || (data.avatarSeed is string && data.avatarSeed.size() <= 100))
+        && (!('fileUrl' in data) || (data.fileUrl is string && data.fileUrl.size() <= 2000000))
+        && (!('fileType' in data) || data.fileType is string)
+        && (!('fileName' in data) || data.fileName is string)
+        && (!('recipientId' in data) || (data.recipientId is string && data.recipientId.size() <= 128));
     }
 
     function isValidUnbanRequest(data) {
@@ -72,24 +75,21 @@ service cloud.firestore {
     }
 
     match /chat_messages/{messageId} {
-      allow list: if isSignedIn() && resource.data.visibility == 'public';
-      allow get: if isSignedIn() && isValidId(messageId) && resource.data.visibility == 'public';
+      allow read: if isSignedIn() && (
+        resource.data.visibility == 'public' || 
+        resource.data.uid == request.auth.uid || 
+        resource.data.recipientId == request.auth.uid
+      );
       allow create: if isSignedIn() 
-        && isValidId(messageId) 
         && isValidChatMessage(request.resource.data);
       allow delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
     }
 
     match /app_users/{userId} {
-      allow get: if isOwner(userId) || isAdmin();
-      allow list: if isAdmin();
-      allow create: if isOwner(userId) 
-        && request.resource.data.status == 'active'
-        && request.resource.data.uid == request.auth.uid;
-      allow update: if isOwner(userId) 
-        && request.resource.data.status == 'active'
-        && request.resource.data.uid == request.auth.uid
-        || isAdmin();
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId
+        && request.resource.data.status == 'active';
+      allow update: if (isSignedIn() && request.auth.uid == userId) || isAdmin();
     }
 
     match /unban_requests/{requestId} {

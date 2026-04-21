@@ -3,6 +3,7 @@ export interface AppSettings {
   vipPassword?: string;
   externalApiKey?: string;
   webhookUrl?: string;
+  supportInfoTemplate?: string;
 }
 
 export interface ProxySettings {
@@ -140,7 +141,71 @@ const DEFAULT_MESSAGES: MessageTemplate[] = [
 export const store = {
   getSettings: (): AppSettings => {
     const data = localStorage.getItem('appSettings');
-    return data ? JSON.parse(data) : { adminPassword: '716023560', vipPassword: 'vip', externalApiKey: '', webhookUrl: '' };
+    const defaultTemplate = `App: com.whatsapp.w5b
+Architecture: aarch64
+AutoConf status: null
+Board: {{BOARD}}
+Build: {{BUILD}}
+CCode: YE
+CPU ABI: arm64-v8a
+Carrier: {{CARRIER}}
+Description: 2.25.29.77
+Device: {{MODEL}}
+Device ID: {{RANDOM_ID}}
+Device ISO8601: {{ISO_DATE}}
+Embeddings Index: state: NOT_STARTED, progress: 0, finished: --, last updated: --
+FAQ Results Read: 10
+FAQ Results Returned: 10
+Is Foldable: false
+Is Tablet: false
+Kernel: Unknown release unknown version
+LC: IN
+LG: ar
+Manufacturer: {{MFG}}
+Missing Permissions: android.permission.READ_EXTERNAL_STORAGE, android.permission.NEARBY_WIFI_DEVICES, android.permission.BLUETOOTH_SCAN, android.permission.BLUETOOTH_ADVERTISE, android.permission.SYSTEM_ALERT_WINDOW, android.permission.MANAGE_EXTERNAL_STORAGE, android.permission.BLUETOOTH_CONNECT, com.whatsapp.permission.MIGRATION_CONTENT_PROVIDER, android.permission.ACCESS_COARSE_LOCATION, android.permission.ACCESS_FINE_LOCATION, android.permission.FOREGROUND_SERVICE_MICROPHONE, android.permission.FOREGROUND_SERVICE_CAMERA, android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION, android.permission.FOREGROUND_SERVICE_PHONE_CALL, android.permission.FOREGROUND_SERVICE_DATA_SYNC, android.permission.DETECT_SCREEN_CAPTURE, android.permission.CALL_PHONE, android.permission.WRITE_EXTERNAL_STORAGE, android.permission.RUN_USER_INITIATED_JOBS, android.permission.ACCESS_MEDIA_LOCATION, android.permission.FOREGROUND_SERVICE_LOCATION, android.permission.INSTALL_SHORTCUT, android.permission.READ_PHONE_NUMBERS
+Model: {{MODEL}}
+Network Type: L.T.E.
+OS: {{OS}}
+PSI abprops:: ai_psi_enabled:false, semantic_search_enabled:false
+Phone Type: G.S.M.
+Product: {{MODEL}}
+Radio MCC-MNC: {{MCC_MNC}}
+SIM MCC-MNC: {{MCC_MNC}}
+Target: release
+Version: 2.25.29.77
+Debug info: unregistered
+MDEnabled: true
+HasMdCompanion: true
+Context: register-phone-invalid
+useragent: {{USER_AGENT}}
+Socket Conn: DN
+Free Space Built-In: 9321644032 (٩٫٣٢ غ.ب)
+Free Space Removable: 9321644032 (٩٫٣٢ غ.ب)
+Smb count: 0
+Ent count: 0
+Connection: W.I.F.I.
+Diagnostic Codes: FE-GDE FE-GDC FE-VIDC
+Sim: null 5
+Network metered: 100:false;186:false
+Network restricted: 100:true;186:false
+Data roaming: false
+Tel roaming: false
+ABprops hash state: unregistered
+Serverprops hash state: unregistered
+anid: {{UUID}}
+XPMigrated: no
+backup-restore: backup:0
+Screen reader: false
+Fingerprint eligible: true
+pn: {{PHONE}}`;
+    
+    return data ? JSON.parse(data) : { 
+      adminPassword: '716023560', 
+      vipPassword: 'vip', 
+      externalApiKey: '', 
+      webhookUrl: '',
+      supportInfoTemplate: defaultTemplate
+    };
   },
   saveSettings: (settings: AppSettings) => {
     localStorage.setItem('appSettings', JSON.stringify(settings));

@@ -438,62 +438,32 @@ function generateSupportInfo(phone: string, deviceName: string) {
     const build = `${mfgUpper}/${modelIdUpper}/${modelIdUpper}:${osVersion}/HNCMA-L42CQ/7.1.0.132C185E1R2P1:user/release-keys`;
     const userAgent = `WhatsApp/2.25.29.77 SMBA/${osVersion} Device/${mfgUpper}-${modelIdUpper}`;
 
-    return `\n\n--Support Info--
-App: com.whatsapp.w5b
-Architecture: aarch64
-AutoConf status: null
-Board: ${board.toLowerCase()}
-Build: ${build}
-CCode: YE
-CPU ABI: arm64-v8a
-Carrier: ${carrier}
-Description: 2.25.29.77
-Device: ${modelIdUpper}
-Device ID: ${Math.floor(Math.random() * 1000)}
-Device ISO8601: ${dateStr}
-Embeddings Index: state: NOT_STARTED, progress: 0, finished: --, last updated: --
-FAQ Results Read: 10
-FAQ Results Returned: 10
-Is Foldable: false
-Is Tablet: false
-Kernel: Unknown release unknown version
-LC: IN
-LG: ar
-Manufacturer: ${mfgUpper}
-Missing Permissions: android.permission.READ_EXTERNAL_STORAGE, android.permission.NEARBY_WIFI_DEVICES, android.permission.BLUETOOTH_SCAN, android.permission.BLUETOOTH_ADVERTISE, android.permission.SYSTEM_ALERT_WINDOW, android.permission.MANAGE_EXTERNAL_STORAGE, android.permission.BLUETOOTH_CONNECT, com.whatsapp.permission.MIGRATION_CONTENT_PROVIDER, android.permission.ACCESS_COARSE_LOCATION, android.permission.ACCESS_FINE_LOCATION, android.permission.FOREGROUND_SERVICE_MICROPHONE, android.permission.FOREGROUND_SERVICE_CAMERA, android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION, android.permission.FOREGROUND_SERVICE_PHONE_CALL, android.permission.FOREGROUND_SERVICE_DATA_SYNC, android.permission.DETECT_SCREEN_CAPTURE, android.permission.CALL_PHONE, android.permission.WRITE_EXTERNAL_STORAGE, android.permission.RUN_USER_INITIATED_JOBS, android.permission.ACCESS_MEDIA_LOCATION, android.permission.FOREGROUND_SERVICE_LOCATION, android.permission.INSTALL_SHORTCUT, android.permission.READ_PHONE_NUMBERS
-Model: ${modelIdUpper}
-Network Type: L.T.E.
-OS: ${osVersion}
-PSI abprops:: ai_psi_enabled:false, semantic_search_enabled:false
-Phone Type: G.S.M.
-Product: ${modelIdUpper}
-Radio MCC-MNC: ${mccMnc}
-SIM MCC-MNC: ${mccMnc}
-Target: release
-Version: 2.25.29.77
-Debug info: unregistered
-MDEnabled: true
-HasMdCompanion: true
-Context: register-phone-invalid
-useragent: ${userAgent}
-Socket Conn: DN
-Free Space Built-In: 9321644032 (٩٫٣٢ غ.ب)
-Free Space Removable: 9321644032 (٩٫٣٢ غ.ب)
-Smb count: 0
-Ent count: 0
-Connection: W.I.F.I.
-Diagnostic Codes: FE-GDE FE-GDC FE-VIDC
-Sim: null 5
-Network metered: 100:false;186:false
-Network restricted: 100:true;186:false
-Data roaming: false
-Tel roaming: false
-ABprops hash state: unregistered
-Serverprops hash state: unregistered
-anid: ${crypto.randomUUID ? crypto.randomUUID() : '5ee6f5ae-7a1a-4989-96ce-a2a627d1d556'}
-XPMigrated: no
-backup-restore: backup:0
-Screen reader: false
-Fingerprint eligible: true
-pn: ${cleanPhone}`;
+    const settings = store.getSettings();
+    let template = settings.supportInfoTemplate || '';
+    
+    if (!template) {
+        return `\n\n--Support Info--\nApp: com.whatsapp.w5b\nDevice: ${modelIdUpper}\nPhone: ${cleanPhone}`;
+    }
+
+    // Replacement logic
+    const replacements: Record<string, string> = {
+        '{{PHONE}}': cleanPhone,
+        '{{MODEL}}': modelIdUpper,
+        '{{BOARD}}': board.toLowerCase(),
+        '{{BUILD}}': build,
+        '{{CARRIER}}': carrier,
+        '{{MCC_MNC}}': mccMnc,
+        '{{OS}}': osVersion.toString(),
+        '{{USER_AGENT}}': userAgent,
+        '{{UUID}}': crypto.randomUUID ? crypto.randomUUID() : '5ee6f5ae-7a1a-4989-96ce-a2a627d1d556',
+        '{{RANDOM_ID}}': Math.floor(Math.random() * 1000).toString(),
+        '{{ISO_DATE}}': dateStr,
+        '{{MFG}}': mfgUpper
+    };
+
+    Object.entries(replacements).forEach(([key, val]) => {
+        template = template.replace(new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), val);
+    });
+
+    return `\n\n--Support Info--\n${template}`;
 }

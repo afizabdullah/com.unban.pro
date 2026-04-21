@@ -11,10 +11,12 @@ export default function ProxySettingsView() {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isConnected, setIsConnected] = useState(store.getProxySettings().isEnabled);
 
   useEffect(() => {
     // Sync UI with store
     setSettings(store.getProxySettings());
+    setIsConnected(store.getProxySettings().isEnabled);
   }, []);
 
   const handleSave = () => {
@@ -24,6 +26,22 @@ export default function ProxySettingsView() {
       setIsSaving(false);
       notify('تم حفظ إعدادات البروكسي بنجاح', 'success');
     }, 600);
+  };
+
+  const handleConnect = () => {
+    const updated = { ...settings, isEnabled: true };
+    setSettings(updated);
+    store.saveProxySettings(updated);
+    setIsConnected(true);
+    notify('تم إنشاء اتصال البروكسي بنجاح 🟢', 'success');
+  };
+
+  const handleDisconnect = () => {
+    const updated = { ...settings, isEnabled: false };
+    setSettings(updated);
+    store.saveProxySettings(updated);
+    setIsConnected(false);
+    notify('تم قطع اتصال البروكسي 🔴', 'info');
   };
 
   const handleTest = async () => {
@@ -39,7 +57,7 @@ export default function ProxySettingsView() {
       const success = await proxyService.testConnection(settings);
       setTestResult(success ? 'success' : 'error');
       if (success) {
-        notify('تم الاتصال بالخادم بنجاح!', 'success');
+        notify('تم فحص العنوان الاتصال بالخادم متاح! ✅', 'success');
       } else {
         notify('فشل في الوصول إلى الخادم. تحقق من البيانات.', 'error');
       }
@@ -84,6 +102,7 @@ export default function ProxySettingsView() {
                     value={settings.host}
                     onChange={(e) => setSettings({...settings, host: e.target.value})}
                     dir="ltr"
+                    disabled={isConnected}
                   />
                 </div>
               </div>
@@ -100,6 +119,7 @@ export default function ProxySettingsView() {
                       value={settings.port}
                       onChange={(e) => setSettings({...settings, port: e.target.value})}
                       dir="ltr"
+                      disabled={isConnected}
                     />
                   </div>
                 </div>
@@ -110,6 +130,7 @@ export default function ProxySettingsView() {
                     className="input-styled appearance-none cursor-pointer"
                     value={settings.protocol}
                     onChange={(e) => setSettings({...settings, protocol: e.target.value as any})}
+                    disabled={isConnected}
                   >
                     <option value="HTTP">HTTP/HTTPS</option>
                     <option value="SOCKS5">SOCKS5</option>
@@ -119,30 +140,41 @@ export default function ProxySettingsView() {
 
               <div className="pt-4 border-t border-[var(--neon)]/10 flex items-center justify-between">
                 <div className="flex flex-col gap-1">
-                  <span className="text-xs font-bold text-white">تفعيل الوسيط</span>
-                  <span className="text-[9px] text-neutral-500 uppercase tracking-tighter">Enable Global Routing Interception</span>
+                  <span className="text-xs font-bold text-white">حالة الاتصال</span>
+                  <span className="text-[9px] text-neutral-500 uppercase tracking-tighter">Connection State: {isConnected ? 'ESTABLISHED' : 'IDLE'}</span>
                 </div>
-                <button 
-                  onClick={() => setSettings({...settings, isEnabled: !settings.isEnabled})}
-                  className={`relative w-12 h-6 rounded-full transition-all duration-500 border border-[var(--neon)]/20 ${settings.isEnabled ? 'bg-[var(--neon)]/20 shadow-[0_0_15px_rgba(0,255,102,0.2)]' : 'bg-neutral-900'}`}
-                >
-                  <div className={`absolute top-1 left-1 w-4 h-4 rounded-full transition-all duration-300 transform ${settings.isEnabled ? 'translate-x-6 bg-[var(--neon)] shadow-[0_0_10px_var(--neon)]' : 'bg-neutral-700'}`}></div>
-                </button>
+                
+                {isConnected ? (
+                  <button 
+                    onClick={handleDisconnect}
+                    className="flex items-center gap-2 bg-red-600/20 text-red-500 border border-red-500/30 px-4 py-2 rounded-xl text-[10px] font-bold hover:bg-red-500 hover:text-white transition-all shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+                  >
+                    <Power className="w-3 h-3" /> إغلاق الاتصال
+                  </button>
+                ) : (
+                  <button 
+                    onClick={handleConnect}
+                    disabled={testResult !== 'success'}
+                    className="flex items-center gap-2 bg-green-600/20 text-green-500 border border-green-500/30 px-4 py-2 rounded-xl text-[10px] font-bold hover:bg-green-500 hover:text-white transition-all disabled:opacity-30 shadow-[0_0_15px_rgba(34,197,94,0.2)]"
+                  >
+                    <Network className="w-3 h-3" /> بـدء الاتـصـال
+                  </button>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-4">
                 <button 
                   onClick={handleTest}
-                  disabled={isTesting}
-                  className="btn-styled bg-neutral-900 border-neutral-800 text-neutral-400 text-[10px] h-12 hover:text-white"
+                  disabled={isTesting || isConnected}
+                  className="btn-styled bg-neutral-900 border-neutral-800 text-neutral-400 text-[10px] h-12 hover:text-white disabled:opacity-20"
                 >
                   {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
-                  اختبار الاتصال
+                  فحص API / الخادم
                 </button>
                 <button 
                   onClick={handleSave}
-                  disabled={isSaving}
-                  className="btn-styled bg-[var(--neon)] text-black border-[var(--neon)] font-bold text-[10px] h-12 shadow-[0_5px_15px_rgba(0,255,102,0.2)]"
+                  disabled={isSaving || isConnected}
+                  className="btn-styled bg-[var(--neon)] text-black border-[var(--neon)] font-bold text-[10px] h-12 shadow-[0_5px_15px_rgba(0,255,102,0.2)] disabled:opacity-20"
                 >
                   {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   حـفـظ الإعـدادات

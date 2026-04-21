@@ -6,7 +6,10 @@ import VipSection from './components/VipSection';
 import ProxySettingsView from './components/ProxySettingsView';
 import GuidesView from './components/GuidesView';
 import HelpSupportView from './components/HelpSupportView';
-import { Settings, MessageSquare, ShieldCheck, Menu, X, AlertTriangle, Search, Server, PhoneOff, BookOpen, Terminal, Crown, Home, HelpCircle, Loader2, LogOut, MessageCircle, Send, Network } from 'lucide-react';
+import WelcomeView from './components/WelcomeView';
+import CodeDelayView from './components/CodeDelayView';
+import WhatsAppSimulation from './components/WhatsAppSimulation';
+import { Settings, MessageSquare, ShieldCheck, Menu, X, AlertTriangle, Search, Server, PhoneOff, BookOpen, Terminal, Crown, Home, HelpCircle, Loader2, LogOut, MessageCircle, Send, Network, Clock, ExternalLink } from 'lucide-react';
 import { motion } from 'motion/react';
 import { NotificationProvider, useNotification } from './contexts/NotificationContext';
 import { auth, db } from './firebase-setup';
@@ -165,6 +168,11 @@ function LoginScreen({ onLogin, onAdminAuth }: { onLogin: (user: any) => void, o
     setError('');
     
     try {
+      // Ensure we are signed in anonymously correctly first if not already
+      if (!auth.currentUser) {
+        await signInAnonymously(auth);
+      }
+
       const q = query(
         collection(db, 'app_accounts'), 
         where('username', '==', username),
@@ -207,7 +215,7 @@ function LoginScreen({ onLogin, onAdminAuth }: { onLogin: (user: any) => void, o
           <div className="w-20 h-20 rounded-2xl border-2 border-[var(--neon)] flex items-center justify-center mb-5 mx-auto bg-neutral-900/50 shadow-[0_0_30px_rgba(0,255,102,0.2)]">
             <ShieldCheck className="w-10 h-10 text-[var(--neon)]" />
           </div>
-          <h1 className="logo-text text-3xl mb-1 tracking-[0.2em]">UNBAN PRO</h1>
+          <h1 className="logo-text text-2xl mb-1 tracking-[0.1em]">Øᵘᶰʷᵃ ᵖʳᵒ࿐</h1>
           <p className="font-mono text-[10px] text-neutral-500 tracking-[0.3em] uppercase">Security Clearance v4</p>
         </div>
 
@@ -329,7 +337,7 @@ export default function App() {
   });
 
   const [isAdmin, setIsAdmin] = useState(false);
-  const [currentView, setCurrentView] = useState<'unban' | 'chat' | 'proxies' | 'guides' | 'vip' | 'help'>('unban');
+  const [currentView, setCurrentView] = useState<'home' | 'unban' | 'delay' | 'chat' | 'proxies' | 'guides' | 'vip' | 'help' | 'wa_contact'>('home');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [proxyStatus, setProxyStatus] = useState(store.getProxySettings().isEnabled);
 
@@ -378,7 +386,10 @@ export default function App() {
   };
 
   const menuItems = [
-    { id: 'unban', label: 'الرئيسية (فك الحظر)', icon: Home },
+    { id: 'home', label: 'الرئيسية (ترحيب)', icon: Home },
+    { id: 'unban', label: 'طلب فك حظر', icon: ShieldCheck },
+    { id: 'delay', label: 'حل مشكلة تأخير الكود', icon: Clock },
+    { id: 'wa_contact', label: 'مراسلة واتساب (رسمي)', icon: ExternalLink },
     { id: 'chat', label: 'غرفة الدردشة', icon: MessageSquare },
     { id: 'proxies', label: 'خوادم البروكسي', icon: Server },
     { id: 'guides', label: 'شروحات وثغرات', icon: BookOpen },
@@ -410,8 +421,8 @@ export default function App() {
                   {isSidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                 </button>
               )}
-              <div className="logo-text text-base">
-                {isAdmin ? 'ADMIN' : 'UNBAN 4.0'}
+              <div className="logo-text text-sm">
+                {isAdmin ? 'ADMIN' : 'Øᵘᶰʷᵃ ᵖʳᵒ࿐'}
               </div>
             </div>
 
@@ -518,9 +529,13 @@ export default function App() {
             )}
 
             {/* Content Area */}
-            <main className="flex-1 overflow-y-auto p-4 flex flex-col relative w-full styled-scrollbar">
+            <main className="flex-1 overflow-y-auto p-4 flex flex-col relative w-full styled-scrollbar text-right">
               {isAdmin ? (
                 <AdminPanel onLogout={() => setIsAdmin(false)} />
+              ) : currentView === 'home' ? (
+                <WelcomeView />
+              ) : currentView === 'delay' ? (
+                <CodeDelayView />
               ) : currentView === 'chat' ? (
                 <ChatRoom />
               ) : currentView === 'unban' ? (
@@ -533,6 +548,8 @@ export default function App() {
                 <VipSection userSession={userSession} />
               ) : currentView === 'help' ? (
                 <HelpSupportView />
+              ) : currentView === 'wa_contact' ? (
+                <WhatsAppSimulation />
               ) : (
                 <PlaceholderView title={menuItems.find(m => m.id === currentView)?.label || 'غير معروف'} />
               )}
