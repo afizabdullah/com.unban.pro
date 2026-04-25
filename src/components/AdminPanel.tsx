@@ -32,13 +32,18 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
     try {
       const user = await signInWithGoogle();
       if (user && user.email === 'a716023560@gmail.com') {
-        await setDoc(doc(db, 'admins', user.uid), {
-          role: 'admin',
-          email: user.email,
-          timestamp: serverTimestamp()
-        });
-        setIsAuthenticated(true);
-        notify('تم تسجيلك كمسؤول وتفعيل الصلاحيات.', 'success');
+        try {
+          await setDoc(doc(db, 'app_admins', user.uid), {
+            role: 'admin',
+            email: user.email,
+            timestamp: serverTimestamp()
+          });
+          setIsAuthenticated(true);
+          notify('تم تسجيلك كمسؤول وتفعيل الصلاحيات.', 'success');
+        } catch (err) {
+          console.error("Firestore Error [app_admins]:", err);
+          notify('خطأ في تفعيل صلاحيات الخادم.', 'error');
+        }
       } else {
         notify('تم تسجيل الدخول، ولكن هذا الحساب ليس له صلاحيات إدارية.', 'info');
       }
@@ -56,12 +61,12 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
       setError('');
       // Elevate to admin in Firestore if password is correct
       if (auth.currentUser) {
-        setDoc(doc(db, 'admins', auth.currentUser.uid), {
+        setDoc(doc(db, 'app_admins', auth.currentUser.uid), {
           role: 'admin',
           via: 'password',
           timestamp: serverTimestamp()
         }, { merge: true }).catch(err => {
-          console.error("Admin elevation failed:", err);
+          console.error("Admin elevation failed at [app_admins]:", err);
           notify('خطأ في تفعيل صلاحيات الخادم. يرجى تسجيل الدخول عبر Google مرة واحدة.', 'info');
         });
       }
@@ -139,6 +144,9 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
               <Globe className="w-4 h-4 text-blue-400" />
               SIGN_IN_WITH_GOOGLE
             </button>
+            <p className="text-[8px] text-neutral-600 mt-2 text-center uppercase tracking-tighter">
+              ⚠️ IF LOGIN FAILS ON EXTERNAL DOMAINS, ADD YOUR URL TO FIREBASE AUTH AUTHORIZED DOMAINS
+            </p>
           </form>
           
           <div className="mt-8 pt-6 border-t border-red-500/10 text-center">
@@ -238,7 +246,9 @@ function StatsView() {
   useEffect(() => {
     const unsubCounters = onSnapshot(doc(db, 'global_stats', 'counters'), (snap) => {
       if (snap.exists()) setGlobalCounters(snap.data());
-    }, (err) => console.error("AdminPanel stats listener error:", err));
+    }, (err) => {
+      console.error("AdminPanel stats listener error [global_stats]:", err);
+    });
 
     const q = query(collection(db, 'unban_requests'), orderBy('timestamp', 'desc'), limit(50));
     const unsubRequests = onSnapshot(q, (snapshot) => {
@@ -378,12 +388,16 @@ function UsersAdmin() {
     const unsubUsers = onSnapshot(qUsers, (snapshot) => {
       const u = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setUsers(u);
+    }, (err) => {
+      console.error("Firestore Listen Error [app_users]:", err);
     });
 
     const qAccounts = query(collection(db, 'app_accounts'));
     const unsubAccounts = onSnapshot(qAccounts, (snapshot) => {
       const a = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAccounts(a);
+    }, (err) => {
+      console.error("Firestore Listen Error [app_accounts]:", err);
     });
 
     return () => {

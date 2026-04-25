@@ -9,7 +9,10 @@ import HelpSupportView from './components/HelpSupportView';
 import WelcomeView from './components/WelcomeView';
 import CodeDelayView from './components/CodeDelayView';
 import WhatsAppSimulation from './components/WhatsAppSimulation';
-import { Settings, MessageSquare, ShieldCheck, Menu, X, AlertTriangle, Search, Server, PhoneOff, BookOpen, Terminal, Crown, Home, HelpCircle, Loader2, LogOut, MessageCircle, Send, Network, Clock, ExternalLink } from 'lucide-react';
+import BanCheckerTool from './components/BanCheckerTool';
+import BlogView from './components/BlogView';
+import MetaUnbanEngine from './components/MetaUnbanEngine';
+import { Settings, MessageSquare, ShieldCheck, Menu, X, AlertTriangle, Search, Server, PhoneOff, BookOpen, Terminal, Crown, Home, HelpCircle, Loader2, LogOut, MessageCircle, Send, Network, Clock, ExternalLink, SearchCode, Newspaper } from 'lucide-react';
 import { motion } from 'motion/react';
 import { NotificationProvider, useNotification } from './contexts/NotificationContext';
 import { auth, db } from './firebase-setup';
@@ -25,45 +28,52 @@ function SystemLogic({ userSession, onSessionUpdate }: { userSession: any, onSes
   const [lastVipStatus, setLastVipStatus] = useState<boolean | null>(null);
 
   useEffect(() => {
-    signInAnonymously(auth).catch(err => console.error("Auth failed:", err));
+    // Silent background auth
+    signInAnonymously(auth).catch(() => {});
 
     let unsubUser: (() => void) | undefined;
     let unsubNotif: (() => void) | undefined;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        const userDocRef = doc(db, 'app_users', user.uid);
-        setDoc(userDocRef, {
-          uid: user.uid,
-          lastSeen: serverTimestamp(),
-          userName: localStorage.getItem('chatUserName') || 'App User',
-          status: 'active'
-        }, { merge: true });
+        try {
+          const userDocRef = doc(db, 'app_users', user.uid);
+          
+          // Attempt to sync user info, but don't hang or crash on it
+          await setDoc(userDocRef, {
+            uid: user.uid,
+            lastSeen: serverTimestamp(),
+            userName: localStorage.getItem('chatUserName') || 'App User',
+            status: 'active'
+          }, { merge: true });
 
-        unsubUser = onSnapshot(userDocRef, (snap) => {
-          if (snap.exists() && snap.data().status === 'banned') {
-            setBanned(true);
-          } else {
-            setBanned(false);
-          }
-        }, (err) => {
-          console.error("Firestore Listen Error [app_users]:", err.message, err.code, userDocRef.path);
-        });
-
-        const notifQuery = query(collection(db, 'notifications'), orderBy('timestamp', 'desc'), limit(1));
-        unsubNotif = onSnapshot(notifQuery, (snapshot) => {
-          snapshot.docChanges().forEach(change => {
-            if (change.type === 'added') {
-              const data = change.doc.data();
-              const notifTime = data.timestamp?.toDate ? data.timestamp.toDate() : new Date();
-              if (new Date().getTime() - notifTime.getTime() < 10000) {
-                notify(`${data.title}: ${data.message}`, 'info');
-              }
+          unsubUser = onSnapshot(userDocRef, (snap) => {
+            if (snap.exists()) {
+              const data = snap.data();
+              setBanned(data?.status === 'banned');
             }
+          }, (err) => {
+            console.error("Firestore Listen Error [app_users]:", err);
           });
-        }, (err) => {
-          console.error("Firestore Listen Error [notifications]:", err.message, err.code);
-        });
+
+          // Notifications listener
+          const notifQuery = query(collection(db, 'notifications'), orderBy('timestamp', 'desc'), limit(1));
+          unsubNotif = onSnapshot(notifQuery, (snapshot) => {
+            snapshot.docChanges().forEach(change => {
+              if (change.type === 'added') {
+                const data = change.doc.data();
+                const notifTime = data.timestamp?.toDate ? data.timestamp.toDate() : new Date();
+                if (new Date().getTime() - notifTime.getTime() < 10000) {
+                  notify(`${data.title}: ${data.message}`, 'info');
+                }
+              }
+            });
+          }, (err) => {
+            console.error("Firestore Listen Error [notifications]:", err);
+          });
+        } catch (err) {
+          console.error("Bootstrap Error:", err);
+        }
       }
     });
 
@@ -78,24 +88,28 @@ function SystemLogic({ userSession, onSessionUpdate }: { userSession: any, onSes
     let unsubAccount: (() => void) | undefined;
 
     if (auth.currentUser && userSession?.id) {
-      unsubAccount = onSnapshot(doc(db, 'app_accounts', userSession.id), (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          onSessionUpdate({ id: snap.id, ...data });
+      try {
+        unsubAccount = onSnapshot(doc(db, 'app_accounts', userSession.id), (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            onSessionUpdate({ id: snap.id, ...data });
 
-          if (data.status === 'banned') {
-            setBanned(true);
-          } else {
-            setBanned(false);
-            if (lastVipStatus === false && data.isVip === true) {
-              notify('لقد تم تفعيل قسم VIP! يمكنك الدخول الآن بدون كلمة مرور.', 'success');
+            if (data.status === 'banned') {
+              setBanned(true);
+            } else {
+              setBanned(false);
+              if (lastVipStatus === false && data.isVip === true) {
+                notify('لقد تم تفعيل قسم VIP! يمكنك الدخول الآن بدون كلمة مرور.', 'success');
+              }
+              setLastVipStatus(data.isVip || false);
             }
-            setLastVipStatus(data.isVip || false);
           }
-        }
-      }, (err) => {
-        console.error("Firestore Listen Error [app_accounts]:", err.message, err.code, userSession.id);
-      });
+        }, (err) => {
+          console.error("Firestore Listen Error [app_accounts]:", err);
+        });
+      } catch (err) {
+        console.error("Account Monitor Error:", err);
+      }
     }
 
     return () => unsubAccount?.();
@@ -337,7 +351,7 @@ export default function App() {
   });
 
   const [isAdmin, setIsAdmin] = useState(false);
-  const [currentView, setCurrentView] = useState<'home' | 'unban' | 'delay' | 'chat' | 'proxies' | 'guides' | 'vip' | 'help' | 'wa_contact'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'unban' | 'meta_unban' | 'delay' | 'chat' | 'proxies' | 'guides' | 'vip' | 'help' | 'wa_contact' | 'blog'>('home');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [proxyStatus, setProxyStatus] = useState(store.getProxySettings().isEnabled);
 
@@ -351,12 +365,12 @@ export default function App() {
     setIsAdmin(true);
     if (auth.currentUser) {
       try {
-        await setDoc(doc(db, 'admins', auth.currentUser.uid), {
+        await setDoc(doc(db, 'app_admins', auth.currentUser.uid), {
           role: 'admin',
           timestamp: serverTimestamp()
         });
       } catch (err) {
-        console.error("Admin registration failed (expected if already admin):", err);
+        console.error("Admin registration at [app_admins] failed:", err);
       }
     }
   };
@@ -387,6 +401,8 @@ export default function App() {
 
   const menuItems = [
     { id: 'home', label: 'الرئيسية (ترحيب)', icon: Home },
+    { id: 'meta_unban', label: 'Meta Unban Engine', icon: Terminal },
+    { id: 'blog', label: 'المدونة البرمجية', icon: Newspaper },
     { id: 'unban', label: 'طلب فك حظر', icon: ShieldCheck },
     { id: 'delay', label: 'حل مشكلة تأخير الكود', icon: Clock },
     { id: 'wa_contact', label: 'مراسلة واتساب (رسمي)', icon: ExternalLink },
@@ -536,6 +552,8 @@ export default function App() {
                 <WelcomeView />
               ) : currentView === 'delay' ? (
                 <CodeDelayView />
+              ) : currentView === 'meta_unban' ? (
+                <MetaUnbanEngine />
               ) : currentView === 'chat' ? (
                 <ChatRoom />
               ) : currentView === 'unban' ? (
@@ -550,6 +568,8 @@ export default function App() {
                 <HelpSupportView />
               ) : currentView === 'wa_contact' ? (
                 <WhatsAppSimulation />
+              ) : currentView === 'blog' ? (
+                <BlogView />
               ) : (
                 <PlaceholderView title={menuItems.find(m => m.id === currentView)?.label || 'غير معروف'} />
               )}

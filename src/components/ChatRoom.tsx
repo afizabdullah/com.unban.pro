@@ -104,7 +104,7 @@ export default function ChatRoom() {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
     }, (error) => {
-      console.error("Firestore Listen Error:", error);
+      console.error("Firestore Listen Error [chat_messages]:", error);
     });
 
     return () => unsubscribe();

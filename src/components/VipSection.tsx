@@ -58,12 +58,12 @@ function WhizzyTool({ onBack }: { onBack: () => void }) {
       });
       
       const statsRef = doc(db, 'global_stats', 'counters');
-      updateDoc(statsRef, {
+      await updateDoc(statsRef, {
         totalRequests: increment(1),
         lastUpdate: serverTimestamp()
-      }).catch(err => console.error("Stats update failed:", err));
-    } catch (e) {
-      console.error("Analytics error:", e);
+      });
+    } catch (err) {
+      console.error("Firestore Update/Create Error [VIP_Analytics]:", err);
     }
 
     await addLog("[SYS]: MOUNTING SECURE TUNNEL...", 500);

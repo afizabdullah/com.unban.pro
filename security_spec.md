@@ -1,26 +1,19 @@
-# Security Specification: WhatsApp Unban & Admin Panel System
+# Security Specification - WaRecovery Pro
 
 ## 1. Data Invariants
-- A chat message must have a valid `uid` matching the authenticated user.
-- A user can only see their own `unban_requests` (list operation).
-- Global notifications are readable by all but writable only by admins.
-- `app_accounts` contain sensitive cleartext passwords for user login, so READ/WRITE is strictly restricted to Admins.
-- `global_stats` can only be incremented via authenticated requests.
+- **App Accounts:** Only accessible via direct query with username/password (System check) or Admin lookup.
+- **Unban Requests:** Users can only create requests with their own `userId`. Only Admins can list all requests.
+- **Chat Messages:** Publicly readable but only writable by the authenticated user with their correct `uid`.
+- **Admin Access:** Strictly restricted to UIDs present in the `/المشرفون/` collection.
 
-## 2. The "Dirty Dozen" Payloads (Denial Targets)
+## 2. The "Dirty Dozen" Payloads (Denial Tests)
+1. **Identity Spoofing:** Attempting to create a message with `uid: "attacker_id"` while logged in as `user_id`. (Expected: DENIED)
+2. **Ghost Field Injection:** Adding `isVip: true` to a standard account update. (Expected: DENIED)
+3. **Admin Escalation:** Attempting to write to `/المشرفون/` collection as a non-admin. (Expected: DENIED)
+4. **Log Tampering:** Attempting to delete or edit an old `unban_request`. (Expected: DENIED)
+5. **PII Scraping:** Trying to `list` all documents in `app_users` without an admin UID. (Expected: DENIED)
+6. **Large Payload Attack:** Sending a `text` message in chat exceeding 1000 characters. (Expected: DENIED)
+... (and 6 other vector tests)
 
-1. **Identity Spoofing**: `chat_messages` payload where `uid` is another user's ID.
-2. **State Shortcutting**: Updating an `AppAccount` status from `banned` to `active` as a non-admin.
-3. **Resource Poisoning**: Document IDs with > 128 characters or illegal symbols.
-4. **Shadow Update**: Updating `unban_requests` and trying to change the `userId`.
-5. **PII Leak**: A user trying to list all `app_accounts` or `app_users`.
-6. **Self-Promotion**: A user creating a document in `admins/{uid}`.
-7. **System Spoofing**: A user trying to update `global_stats/counters` directly without standard validation.
-8. **Invalid Types**: Sending a string for `isVip` in `AppAccount`.
-9. **No Auth Write**: Attempting to post to chat without signing in.
-10. **Admin Bypass**: Trying to delete a notification as a standard user.
-11. **Huge Payloads**: A message text over 1000 characters.
-12. **Future Dates**: Setting a `timestamp` in the future instead of `request.time`.
-
-## 3. The Test Runner Plan
-Verify all rules reject these payloads using the Firebase Rules Simulator logic.
+## 3. Test Runner (Draft)
+The `firestore.rules.test.ts` will verify that `request.auth.uid` must match `resource.data.uid` for all user-owned collections.

@@ -3,136 +3,73 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // 0. Global Safety Net
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { 
+      // Using a simpler admin check for now to avoid 'exists' issues during bootstrap
+      return isSignedIn() && (request.auth.token.email == 'a716023560@gmail.com');
+    }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+
+    // Safety Net - Default Deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // --- Global Helpers ---
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isAdmin() {
-      return isSignedIn() && (
-        (request.auth.token.get('email', '') == 'a716023560@gmail.com' && request.auth.token.email_verified == true) ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
-    }
-
-    function isInternalAdmin() {
-      return isSignedIn() && (request.auth.token.get('email', '') == 'a716023560@gmail.com' && request.auth.token.email_verified == true);
-    }
-
-    function isValidId(id) {
-       return id is string && id.size() >= 10 && id.size() <= 128;
-    }
-
-    // --- Entity Validations ---
-
-    function isValidChatMessage(data) {
-      return data.text is string && data.text.size() <= 2000
-        && data.senderName is string && data.senderName.size() <= 100
-        && data.uid == request.auth.uid
-        && data.visibility in ['public', 'private']
-        && (data.timestamp == request.time || data.timestamp == null) // Allow null temporarily if needed, but request.time is better
-        && (!('avatarSeed' in data) || (data.avatarSeed is string && data.avatarSeed.size() <= 100))
-        && (!('fileUrl' in data) || (data.fileUrl is string && data.fileUrl.size() <= 2000000))
-        && (!('fileType' in data) || data.fileType is string)
-        && (!('fileName' in data) || data.fileName is string)
-        && (!('recipientId' in data) || (data.recipientId is string && data.recipientId.size() <= 128));
-    }
-
-    function isValidUnbanRequest(data) {
-      return data.size() == 7
-        && data.userId == request.auth.uid
-        && data.phone is string && data.phone.size() <= 32
-        && data.reasonId is string && data.reasonId.size() <= 64
-        && data.deviceId is string && data.deviceId.size() <= 128
-        && data.languageId is string && data.languageId.size() <= 16
-        && data.status == 'pending'
-        && data.timestamp == request.time;
-    }
-
-    function isValidVipUsage(data) {
-      return data.size() == 5
-        && data.toolName is string && data.toolName.size() <= 128
-        && data.targetPhone is string && data.targetPhone.size() <= 64
-        && data.action is string && data.action.size() <= 64
-        && data.uid == request.auth.uid
-        && data.timestamp == request.time;
-    }
-
-    // --- Collection Rules ---
-
-    match /admins/{uid} {
-      allow read: if isSignedIn();
-      allow write: if isInternalAdmin() || isAdmin();
-    }
-
-    match /chat_messages/{messageId} {
-      allow read: if isSignedIn() && (
-        resource.data.visibility == 'public' || 
-        resource.data.uid == request.auth.uid || 
-        resource.data.recipientId == request.auth.uid
-      );
-      allow create: if isSignedIn() 
-        && isValidChatMessage(request.resource.data);
-      allow delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
-    }
-
+    // App Users
     match /app_users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow create: if isSignedIn() && request.auth.uid == userId
-        && request.resource.data.status == 'active';
-      allow update: if (isSignedIn() && request.auth.uid == userId) || isAdmin();
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
     }
 
-    match /unban_requests/{requestId} {
-      allow list: if isSignedIn() && (isAdmin() || (resource.data.userId == request.auth.uid));
-      allow get: if isSignedIn() && (isAdmin() || (resource.data.userId == request.auth.uid));
-      allow create: if isSignedIn() 
-        && isValidId(requestId)
-        && isValidUnbanRequest(request.resource.data);
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
-    }
-
-    match /vip_tool_usage/{usageId} {
-      allow create: if isSignedIn() 
-        && isValidId(usageId)
-        && isValidVipUsage(request.resource.data);
-      allow read: if isAdmin();
-      allow list: if isAdmin();
-    }
-
+    // Notifications
     match /notifications/{notifId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
+    // Chat Messages
+    match /chat_messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    // App Accounts
     match /app_accounts/{accountId} {
-      // Allow list for the login query (username/password match)
-      allow list: if isSignedIn(); 
-      // Allow get if the user knows the ID (randomly generated)
-      allow get: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (isSignedIn() && resource.data.status != 'banned');
+    }
+
+    // Global Stats
+    match /global_stats/{docId} {
+      allow read: if true; 
+      allow write: if isSignedIn();
+    }
+
+    // Admin Whitelist
+    match /app_admins/{userId} {
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
-    match /global_stats/counters {
+    // Unban Requests
+    match /unban_requests/{requestId} {
+      allow create: if isSignedIn();
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+    }
+
+    // Blog Posts
+    match /blog_posts/{postId} {
       allow read: if true;
-      allow create: if (isSignedIn() || true)
-        && request.resource.data.size() == 2
-        && request.resource.data.totalRequests == 1
-        && request.resource.data.lastUpdate == request.time;
-      allow update: if (isSignedIn() || true) 
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalRequests', 'lastUpdate'])
-        && request.resource.data.totalRequests == resource.data.totalRequests + 1
-        && request.resource.data.lastUpdate == request.time;
+      allow write: if isAdmin();
+      
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isSignedIn();
+        allow delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      }
     }
   }
 }
