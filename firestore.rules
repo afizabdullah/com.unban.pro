@@ -1,75 +1,104 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // --- Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
     
-    function isSignedIn() { return request.auth != null; }
-    function isAdmin() { 
-      // Using a simpler admin check for now to avoid 'exists' issues during bootstrap
-      return isSignedIn() && (request.auth.token.email == 'a716023560@gmail.com');
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/app_admins/$(request.auth.uid));
     }
-    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
-
-    // Safety Net - Default Deny
-    match /{document=**} {
-      allow read, write: if false;
+    
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
     }
 
-    // App Users
+    // --- Collections ---
+
+    // GLOBAL STATS (Public Read)
+    match /global_stats/counters {
+      allow get: if true;
+      allow list: if true;
+      allow write: if isAdmin();
+    }
+
+    // APP USERS (Self or Admin)
     match /app_users/{userId} {
-      allow read: if isSignedIn();
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
       allow create: if isOwner(userId);
       allow update: if isOwner(userId) || isAdmin();
     }
 
-    // Notifications
+    // APP ADMINS (Self or Admin)
+    match /app_admins/{adminId} {
+      allow get: if isOwner(adminId) || isAdmin();
+      allow list: if isAdmin();
+      // Allow creation/update for initial setup or by other admins
+      allow create, update: if isOwner(adminId) || isAdmin();
+    }
+
+    // APP ACCOUNTS (Tracking & Credentials)
+    match /app_accounts/{accountId} {
+      // Allows individual lookup if signed in
+      allow get: if isSignedIn();
+      // Admin can list all, users can list theirs (if they use a filter, handled by standard list rule)
+      allow list: if isSignedIn(); 
+      allow write: if isAdmin();
+    }
+
+    // CHAT MESSAGES
+    match /chat_messages/{msgId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    // NOTIFICATIONS
     match /notifications/{notifId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
-    // Chat Messages
-    match /chat_messages/{messageId} {
-      allow read: if isSignedIn();
+    // UNBAN REQUESTS
+    match /unban_requests/{reqId} {
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
       allow create: if isSignedIn();
-      allow delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow update, delete: if isAdmin();
     }
 
-    // App Accounts
-    match /app_accounts/{accountId} {
-      allow read: if isSignedIn();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (isSignedIn() && resource.data.status != 'banned');
-    }
-
-    // Global Stats
-    match /global_stats/{docId} {
-      allow read: if true; 
-      allow write: if isSignedIn();
-    }
-
-    // Admin Whitelist
-    match /app_admins/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    // Unban Requests
-    match /unban_requests/{requestId} {
+    // VIP TOOL USAGE
+    match /vip_tool_usage/{usageId} {
       allow create: if isSignedIn();
-      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow read: if isAdmin();
     }
 
-    // Blog Posts
+    // UNBAN APPEALS
+    match /unban_appeals/{appealId} {
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // BLOG POSTS
     match /blog_posts/{postId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isAdmin();
       
       match /comments/{commentId} {
-        allow read: if true;
-        allow create: if isSignedIn();
-        allow delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+        allow update, delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
       }
+    }
+
+    // --- Global Safety Net ---
+    match /{document=**} {
+      allow read, write: if isAdmin();
     }
   }
 }

@@ -1,18 +1,56 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously } from 'firebase/auth';
-import { getFirestore, initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with long polling to bypass potential proxy/WebSocket issues
-console.log("Initializing Firestore with Database ID:", firebaseConfig.firestoreDatabaseId);
-export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId);
+// Initialize Firestore
+console.log("Firebase Config Keys:", Object.keys(firebaseConfig));
+console.log("Using Database ID:", firebaseConfig.firestoreDatabaseId);
+
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+    },
+    operationType,
+    path
+  };
+  console.log(`[Firestore Error] Operation: ${operationType}, Path: ${path}, User: ${auth.currentUser?.uid}`);
+  console.error('Firestore Error Detail: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 export const signInWithGoogle = async () => {
   try {
@@ -45,9 +83,14 @@ async function testConnection(retries = 3) {
     try {
       // Test read on a known public path
       const testRef = doc(db, 'global_stats', 'counters');
-      const testSnap = await getDocFromServer(testRef);
-      console.log("Firestore connection test: SUCCESS", testSnap.exists() ? "Stats found" : "Stats doc missing (but read allowed)");
-      return;
+      try {
+        const testSnap = await getDocFromServer(testRef);
+        console.log("Firestore connection test: SUCCESS", testSnap.exists() ? "Stats found" : "Stats doc missing (but read allowed)");
+        return;
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, 'global_stats/counters');
+        throw err;
+      }
     } catch (error) {
       const err = error as any;
       console.error(`Firestore test attempt ${i+1} failed:`, err.code, err.message);

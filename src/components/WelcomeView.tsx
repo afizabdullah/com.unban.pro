@@ -4,7 +4,7 @@ import { Terminal, BookOpen, Clock, ShieldCheck, Zap, Info } from 'lucide-react'
 
 export default function WelcomeView() {
   const [displayText, setDisplayText] = useState('');
-  const fullText = "أهلاً بك في نظام Øᵘᶰʷᵃ ᵖʳᵒ࿐ - رفيقك المتكامل لفك الحظر وحل مشاكل الواتساب";
+  const fullText = "أهلاً بك يا بطل! أنا معلمك الأسطوري في AIDE Plus. هل أنت مستعد لتبدأ رحلتك في عالم برمجة الأندرويد؟";
 
   useEffect(() => {
     let index = 0;
@@ -29,7 +29,7 @@ export default function WelcomeView() {
         <div className="matrix-overlay opacity-10"></div>
         <div className="relative z-10">
           <motion.h1 
-            className="text-xl font-bold mb-4 font-display min-h-[5rem] flex items-center justify-center px-4"
+            className="text-lg font-bold mb-4 font-display min-h-[5rem] flex items-center justify-center px-4 leading-relaxed"
             style={{
               background: 'linear-gradient(to right, #00ff66, #00ccff, #ff00ff, #ffcc00, #00ff66)',
               backgroundSize: '200% auto',
@@ -39,11 +39,11 @@ export default function WelcomeView() {
             }}
           >
             {displayText}
-            <span className="animate-pulse w-1 h-8 bg-[var(--neon)] ml-1"></span>
+            <span className="animate-pulse w-1 h-6 bg-[var(--neon)] ml-1"></span>
           </motion.h1>
           
           <p className="text-[10px] text-neutral-500 uppercase tracking-widest font-mono">
-            Secure Terminal Connection Established // Root_Access_Granted
+            Mentor Online // Ready to Teach
           </p>
         </div>
       </div>
@@ -52,43 +52,35 @@ export default function WelcomeView() {
       <div className="space-y-4">
         <div className="flex items-center gap-3 mb-2">
           <Terminal className="w-5 h-5 text-[var(--neon)]" />
-          <h2 className="text-sm font-bold text-white uppercase tracking-widest">تعليمات الاستخدام البسيطة</h2>
+          <h2 className="text-sm font-bold text-white uppercase tracking-widest">كيف نبدأ التعلم؟</h2>
         </div>
 
         <div className="grid grid-cols-1 gap-3">
           <InstructionCard 
-            icon={<ShieldCheck className="w-4 h-4" />}
-            title="فك الحظر (الخيار الثاني)"
-            desc="إذا كان رقمك محظوراً، توجه لقسم 'طلب فك حظر' واملأ البيانات بدقة ليقوم النظام بإرسال طلب فك التشفير."
+            icon={<BookOpen className="w-4 h-4" />}
+            title="دليل المشاريع"
+            desc="توجه إلى قسم 'دليل المشاريع' حيث ستجد قائمة بكل ما ترغب في تعلمه، من التطبيقات البسيطة إلى الـ Mod Menu المعقد."
           />
           <InstructionCard 
-            icon={<Clock className="w-4 h-4" />}
-            title="مشكلة تأخير الكود"
-            desc="إذا ظهرت لك رسالة (لا يمكنك طلب الكود إلا بعد 8 أو 24 ساعة)، توجه لقسم 'حل مشكلة التأخير' واتبع التعليمات البرمجية لتجاوز العداد."
+            icon={<ShieldCheck className="w-4 h-4" />}
+            title="خطوة بخطوة"
+            desc="كل مشروع مشروح باللغة العربية البسيطة مع الكود الكامل وخطوات التنفيذ داخل تطبيق AIDE Plus."
           />
           <InstructionCard 
             icon={<Zap className="w-4 h-4" />}
-            title="خوادم البروكسي"
-            desc="استخدم البروكسيات المتاحة لتغيير هويتك الرقمية (IP) مما يساعد في تسريع قبول طلبات فك الحظر."
-          />
-          <InstructionCard 
-            icon={<Info className="w-4 h-4" />}
-            title="الدعم الفني"
-            desc="إذا واجهت أي مشكلة، تواصل معنا فوراً عبر تلجرام أو واتساب من واجهة الدخول."
+            title="الأكواد جاهزة"
+            desc="يمكنك نسخ الأكواد مباشرة ولصقها في ملفات مشروعك داخل AIDE Plus لترى النتيجة فوراً."
           />
         </div>
       </div>
 
-      {/* Code Delay Explanation - Crucial Part requested by user */}
       <div className="card p-5 bg-blue-900/10 border border-blue-500/30">
         <div className="flex items-center gap-3 mb-3 text-blue-400">
-          <BookOpen className="w-5 h-5" />
-          <h3 className="text-xs font-bold uppercase tracking-wider">شرح مشكلة تأخير الكود</h3>
+          <Info className="w-5 h-5" />
+          <h3 className="text-xs font-bold uppercase tracking-wider">نصيحة المعلم</h3>
         </div>
         <p className="text-[11px] text-gray-400 leading-relaxed text-right">
-          هذه المشكلة تظهر عندما تطلب الكود عدة مرات بشكل خاطئ أو من جهاز مشبوه. يقوم واتساب بفرض "عداد زمني" يمنعك من طلب الكود عبر SMS لمدة تصل إلى 24 ساعة. 
-          <br /><br />
-          <span className="text-white font-bold">الحل المدمج:</span> نقوم باستخدام ثغرة برمجية تطلب الكود عبر "الاتصال الصوتي" بدلاً من SMS، مع تنظيف ذاكرة الكاش الخاصة بالتطبيق وإيهام الواتساب بأنك تستخدم جهازاً جديداً كلياً.
+          لا تخف من الأخطاء! البرمجة هي فن حل المشاكل. إذا ظهر لك خطأ أحمر، اقرأه جيداً أو راجع قسم 'أخطاء شائعة' في المشروع. أنت هنا لتتعلم وتصبح محترفاً.
         </p>
       </div>
 

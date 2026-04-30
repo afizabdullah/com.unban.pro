@@ -11,14 +11,15 @@ import CodeDelayView from './components/CodeDelayView';
 import WhatsAppSimulation from './components/WhatsAppSimulation';
 import BanCheckerTool from './components/BanCheckerTool';
 import BlogView from './components/BlogView';
+import ProjectBrowser from './components/ProjectBrowser';
 import MetaUnbanEngine from './components/MetaUnbanEngine';
 import { Settings, MessageSquare, ShieldCheck, Menu, X, AlertTriangle, Search, Server, PhoneOff, BookOpen, Terminal, Crown, Home, HelpCircle, Loader2, LogOut, MessageCircle, Send, Network, Clock, ExternalLink, SearchCode, Newspaper } from 'lucide-react';
 import { motion } from 'motion/react';
 import { NotificationProvider, useNotification } from './contexts/NotificationContext';
-import { auth, db } from './firebase-setup';
+import { auth, db, handleFirestoreError, OperationType } from './firebase-setup';
 import { store } from './store/store';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, serverTimestamp, collection, query, orderBy, limit, getDocs, where, addDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, serverTimestamp, collection, query, orderBy, limit, getDocs, where, addDoc, getDocFromServer } from 'firebase/firestore';
 import { Smartphone, Lock, User, Key, ArrowRight } from 'lucide-react';
 
 // System Logic Component to handle Firebase without polluting App UI
@@ -39,13 +40,37 @@ function SystemLogic({ userSession, onSessionUpdate }: { userSession: any, onSes
         try {
           const userDocRef = doc(db, 'app_users', user.uid);
           
-          // Attempt to sync user info, but don't hang or crash on it
-          await setDoc(userDocRef, {
-            uid: user.uid,
-            lastSeen: serverTimestamp(),
-            userName: localStorage.getItem('chatUserName') || 'App User',
-            status: 'active'
-          }, { merge: true });
+          let userSnap;
+          try {
+            userSnap = await getDocFromServer(userDocRef);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.GET, `app_users/${user.uid}`);
+            throw e;
+          }
+          
+          if (userSnap.exists()) {
+            // Already exists, just update lastSeen
+            try {
+              await setDoc(userDocRef, {
+                lastSeen: serverTimestamp(),
+                userName: localStorage.getItem('chatUserName') || 'App User'
+              }, { merge: true });
+            } catch (e) {
+              handleFirestoreError(e, OperationType.UPDATE, `app_users/${user.uid}`);
+            }
+          } else {
+            // Create user
+            try {
+              await setDoc(userDocRef, {
+                uid: user.uid,
+                lastSeen: serverTimestamp(),
+                userName: localStorage.getItem('chatUserName') || 'App User',
+                status: 'active'
+              });
+            } catch (e) {
+              handleFirestoreError(e, OperationType.CREATE, `app_users/${user.uid}`);
+            }
+          }
 
           unsubUser = onSnapshot(userDocRef, (snap) => {
             if (snap.exists()) {
@@ -53,7 +78,7 @@ function SystemLogic({ userSession, onSessionUpdate }: { userSession: any, onSes
               setBanned(data?.status === 'banned');
             }
           }, (err) => {
-            console.error("Firestore Listen Error [app_users]:", err);
+            handleFirestoreError(err, OperationType.GET, `app_users/${user.uid}`);
           });
 
           // Notifications listener
@@ -69,7 +94,7 @@ function SystemLogic({ userSession, onSessionUpdate }: { userSession: any, onSes
               }
             });
           }, (err) => {
-            console.error("Firestore Listen Error [notifications]:", err);
+            handleFirestoreError(err, OperationType.GET, 'notifications');
           });
         } catch (err) {
           console.error("Bootstrap Error:", err);
@@ -105,7 +130,7 @@ function SystemLogic({ userSession, onSessionUpdate }: { userSession: any, onSes
             }
           }
         }, (err) => {
-          console.error("Firestore Listen Error [app_accounts]:", err);
+          handleFirestoreError(err, OperationType.GET, `app_accounts/${userSession.id}`);
         });
       } catch (err) {
         console.error("Account Monitor Error:", err);
@@ -160,198 +185,15 @@ function PlaceholderView({ title }: { title: string }) {
   );
 }
 
-// System Login Screen Component
-function LoginScreen({ onLogin, onAdminAuth }: { onLogin: (user: any) => void, onAdminAuth: () => void }) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const { notify } = useNotification();
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username || !password) return;
-    
-    // Secret backdoor for admin setup (delete later or keep for recovery)
-    if (username === 'ROOT' && password === '716023560') {
-      onAdminAuth();
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    
-    try {
-      // Ensure we are signed in anonymously correctly first if not already
-      if (!auth.currentUser) {
-        await signInAnonymously(auth);
-      }
-
-      const q = query(
-        collection(db, 'app_accounts'), 
-        where('username', '==', username),
-        where('password', '==', password)
-      );
-      
-      const snapshot = await getDocs(q);
-      
-      if (snapshot.empty) {
-        setError('خطأ في اسم المستخدم أو كلمة المرور');
-        notify('بيانات دخول غير صحيحة', 'error');
-      } else {
-        const userData = snapshot.docs[0].data();
-        if (userData.status === 'banned') {
-          setError('هذا الحساب محظور من قبل الإدارة');
-          notify('حساب محظور', 'error');
-        } else {
-          onLogin({ id: snapshot.docs[0].id, ...userData });
-          notify('تم تسجيل الدخول بنجاح', 'success');
-        }
-      }
-    } catch (err) {
-      console.error(err);
-      setError('حدث خطأ أثناء الاتصال بالسيرفر');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-neutral-950 z-[10000] flex items-center justify-center p-4 font-mono overflow-hidden" dir="rtl">
-      <div className="matrix-overlay"></div>
-      
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="w-full max-w-[380px] card p-8 relative z-10 flex flex-col items-center"
-      >
-        <div className="mb-10 text-center">
-          <div className="w-20 h-20 rounded-2xl border-2 border-[var(--neon)] flex items-center justify-center mb-5 mx-auto bg-neutral-900/50 shadow-[0_0_30px_rgba(0,255,102,0.2)]">
-            <ShieldCheck className="w-10 h-10 text-[var(--neon)]" />
-          </div>
-          <h1 className="logo-text text-2xl mb-1 tracking-[0.1em]">Øᵘᶰʷᵃ ᵖʳᵒ࿐</h1>
-          <p className="font-mono text-[10px] text-neutral-500 tracking-[0.3em] uppercase">Security Clearance v4</p>
-        </div>
-
-        <form onSubmit={handleLogin} className="w-full space-y-6">
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mr-1">Identity Tag</label>
-            <div className="relative group">
-              <User className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600 group-focus-within:text-[var(--neon)] transition-colors" />
-              <input 
-                type="text"
-                placeholder="USERNAME"
-                className="input-styled pr-12"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mr-1">Security Key</label>
-            <div className="relative group">
-              <Key className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600 group-focus-within:text-[var(--neon)] transition-colors" />
-              <input 
-                type="password"
-                placeholder="••••••••"
-                className="input-styled pr-12"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {error && (
-            <motion.div 
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="p-3 border border-red-500/20 bg-red-950/20 rounded-xl flex items-center justify-center gap-3"
-            >
-              <AlertTriangle className="w-4 h-4 text-red-500" />
-              <span className="text-xs text-red-400 font-bold">{error}</span>
-            </motion.div>
-          )}
-
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="btn-styled btn-primary w-full shadow-[0_10px_30px_rgba(0,255,102,0.15)]"
-          >
-            {loading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <>
-                AUTHENTICATE
-                <ArrowRight className="w-5 h-5 rotate-180" />
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="mt-8 pt-6 border-t border-[var(--neon)]/10 w-full">
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest text-center mb-4">تواصل مع المطور للحصول على حساب</p>
-            
-            <div className="flex flex-col gap-2">
-              <a 
-                href="https://wa.me/967783799137" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center justify-between p-2.5 rounded-lg border border-green-500/30 bg-green-950/10 hover:bg-green-950/20 transition-all group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-green-500 group-hover:shadow-[0_0_15px_rgba(34,197,94,0.5)] transition-all">
-                    <MessageCircle className="w-4 h-4" />
-                  </div>
-                  <span className="text-[11px] text-gray-300 font-bold">تواصل واتساب (1)</span>
-                </div>
-                <ArrowRight className="w-3 h-3 text-gray-600 rotate-180" />
-              </a>
-
-              <a 
-                href="https://wa.me/967733234211" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center justify-between p-2.5 rounded-lg border border-green-500/30 bg-green-950/10 hover:bg-green-950/20 transition-all group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-green-500 group-hover:shadow-[0_0_15px_rgba(34,197,94,0.5)] transition-all">
-                    <MessageCircle className="w-4 h-4" />
-                  </div>
-                  <span className="text-[11px] text-gray-300 font-bold">تواصل واتساب (2)</span>
-                </div>
-                <ArrowRight className="w-3 h-3 text-gray-600 rotate-180" />
-              </a>
-
-              <a 
-                href="https://t.me/CYBBEEAGLE" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center justify-between p-2.5 rounded-lg border border-blue-500/30 bg-blue-950/10 hover:bg-blue-950/20 transition-all group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-500 group-hover:shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-all">
-                    <Send className="w-4 h-4" />
-                  </div>
-                  <span className="text-[11px] text-gray-300 font-bold">تواصل معا دعم عبر تلجرام</span>
-                </div>
-                <ArrowRight className="w-3 h-3 text-gray-600 rotate-180" />
-              </a>
-            </div>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
+// App component
 export default function App() {
   const [userSession, setUserSession] = useState<any>(() => {
     const saved = localStorage.getItem('user_session');
-    return saved ? JSON.parse(saved) : null;
+    return saved ? JSON.parse(saved) : { id: 'guest', username: 'زائر', isVip: false };
   });
 
   const [isAdmin, setIsAdmin] = useState(false);
-  const [currentView, setCurrentView] = useState<'home' | 'unban' | 'meta_unban' | 'delay' | 'chat' | 'proxies' | 'guides' | 'vip' | 'help' | 'wa_contact' | 'blog'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'projects' | 'tools' | 'chat' | 'vip' | 'help'>('home');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [proxyStatus, setProxyStatus] = useState(store.getProxySettings().isEnabled);
 
@@ -395,27 +237,22 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    setUserSession(null);
+    const guestSession = { id: 'guest', username: 'زائر', isVip: false };
+    setUserSession(guestSession);
     localStorage.removeItem('user_session');
   };
 
   const menuItems = [
-    { id: 'home', label: 'الرئيسية (ترحيب)', icon: Home },
-    { id: 'meta_unban', label: 'Meta Unban Engine', icon: Terminal },
-    { id: 'blog', label: 'المدونة البرمجية', icon: Newspaper },
-    { id: 'unban', label: 'طلب فك حظر', icon: ShieldCheck },
-    { id: 'delay', label: 'حل مشكلة تأخير الكود', icon: Clock },
-    { id: 'wa_contact', label: 'مراسلة واتساب (رسمي)', icon: ExternalLink },
-    { id: 'chat', label: 'غرفة الدردشة', icon: MessageSquare },
-    { id: 'proxies', label: 'خوادم البروكسي', icon: Server },
-    { id: 'guides', label: 'شروحات وثغرات', icon: BookOpen },
-    { id: 'help', label: 'المساعدة والدعم', icon: HelpCircle },
-    { id: 'vip', label: 'قسم الـ VIP', icon: Crown },
+    { id: 'home', label: 'الرئيسية (المعلم)', icon: Home },
+    { id: 'projects', label: 'دليل المشاريع', icon: Terminal },
+    { id: 'tools', label: 'أدوات المبتدئين', icon: ShieldCheck },
+    { id: 'chat', label: 'دردشة المبرمجين', icon: MessageSquare },
+    { id: 'vip', label: 'المشاريع المميزة', icon: Crown },
+    { id: 'help', label: 'مساعدة ودعم', icon: HelpCircle },
   ] as const;
 
   return (
     <NotificationProvider>
-      {!userSession && !isAdmin && <LoginScreen onLogin={handleLogin} onAdminAuth={handleAdminAuth} />}
       <SystemLogic userSession={userSession} onSessionUpdate={handleLogin} />
       {/* Background for Desktop View */}
       <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center sm:py-6 sm:px-4 font-mono text-right" dir="rtl">
@@ -438,7 +275,7 @@ export default function App() {
                 </button>
               )}
               <div className="logo-text text-sm">
-                {isAdmin ? 'ADMIN' : 'Øᵘᶰʷᵃ ᵖʳᵒ࿐'}
+                {isAdmin ? 'ADMIN' : 'حافظ العزي'}
               </div>
             </div>
 
@@ -550,26 +387,16 @@ export default function App() {
                 <AdminPanel onLogout={() => setIsAdmin(false)} />
               ) : currentView === 'home' ? (
                 <WelcomeView />
-              ) : currentView === 'delay' ? (
-                <CodeDelayView />
-              ) : currentView === 'meta_unban' ? (
-                <MetaUnbanEngine />
+              ) : currentView === 'projects' ? (
+                <ProjectBrowser />
               ) : currentView === 'chat' ? (
                 <ChatRoom />
-              ) : currentView === 'unban' ? (
-                <UserView userSession={userSession} />
-              ) : currentView === 'proxies' ? (
-                <ProxySettingsView />
-              ) : currentView === 'guides' ? (
-                <GuidesView />
+              ) : currentView === 'tools' ? (
+                <BanCheckerTool />
               ) : currentView === 'vip' ? (
                 <VipSection userSession={userSession} />
               ) : currentView === 'help' ? (
                 <HelpSupportView />
-              ) : currentView === 'wa_contact' ? (
-                <WhatsAppSimulation />
-              ) : currentView === 'blog' ? (
-                <BlogView />
               ) : (
                 <PlaceholderView title={menuItems.find(m => m.id === currentView)?.label || 'غير معروف'} />
               )}
